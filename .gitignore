@@ -1,7 +1,7 @@
-# Veri — asla push edilmez
+# Data, never pushed
 data/
 
-# Sanal ortamlar
+# Virtual environments
 .venv/
 venv/
 
@@ -10,11 +10,11 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
-# Veritabanı
+# Database
 *.db
 *.sqlite
 
-# Eğitilmiş modeller (büyük dosyalar)
+# Trained models, large files
 models/
 *.onnx
 *.pt
@@ -23,5 +23,5 @@ models/
 # macOS
 .DS_Store
 
-# Editör
+# Editor
 .vscode/settings.json
