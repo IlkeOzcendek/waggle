@@ -77,6 +77,16 @@ pip install -r requirements.txt
 uvicorn panel.app.main:app --reload
 ```
 
+For a presentation-ready server with deterministic H1/H2/H3 events and a
+weekly report, use the one-command demo:
+
+```bash
+python tools/run_demo.py
+```
+
+See [`DEMO_CHECKLIST.md`](DEMO_CHECKLIST.md) for the presentation flow and
+recovery steps.
+
 Open <http://127.0.0.1:8000> and sign in with the local demo account:
 
 - Username: `admin`
@@ -103,8 +113,8 @@ available in the resolved history for traceability.
 
 ## Send an event from an edge device
 
-Panel users authenticate with a browser session. Edge devices use a separate
-`X-Device-Key` that can only submit events. Set a strong key on both the server
+Panel users authenticate with a browser session. Edge services use a separate
+`X-Device-Key` that can only submit events and generated reports. Set a strong key on both the server
 and device before deployment:
 
 ```bash

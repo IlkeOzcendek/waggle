@@ -50,6 +50,7 @@ class LoginRequest(BaseModel):
 
 
 PUBLIC_PATHS = {"/login", "/api/login", "/api/health"}
+DEVICE_POST_PATHS = {"/api/events", "/api/reports"}
 
 
 @app.middleware("http")
@@ -62,7 +63,7 @@ async def require_login(request: Request, call_next):
         request.state.username = username
         return await call_next(request)
     if (
-        path == "/api/events"
+        path in DEVICE_POST_PATHS
         and request.method == "POST"
         and verify_device_key(request.headers.get(DEVICE_KEY_HEADER))
     ):
