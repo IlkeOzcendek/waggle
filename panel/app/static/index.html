@@ -21,6 +21,7 @@
     <button class="nav-button" data-view="hives" type="button">Kovanlarım</button>
     <button class="nav-button" data-view="alarms" type="button">Alarmlar <span id="nav-alarm-count" class="nav-count" hidden>0</span></button>
     <button class="nav-button" data-view="reports" type="button">Raporlar</button>
+    <button class="nav-button" data-view="exports" type="button">Dışa Aktar</button>
   </nav>
 
   <main>
@@ -110,6 +111,19 @@
         </div>
         <div class="alarm-summary"><div><span>Açık alarm</span><strong id="open-alarm-count">0</strong></div><p>Açık alarmları fiziksel kovan kontrolünden sonra işaretleyin.</p></div>
         <div id="alarms-list" class="alarms-list"><p>Alarm verileri yükleniyor…</p></div>
+      </section>
+    </div>
+
+    <div id="exports-view" class="app-view" hidden>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">VERİ YÖNETİMİ</p><h2>Dışa aktar</h2></div></div>
+        <p class="management-intro">Kayıtları Excel için CSV veya sistem entegrasyonları için JSON biçiminde indirin.</p>
+        <div class="export-grid">
+          <article><div><span class="export-icon">♜</span><h3>Kovanlar</h3><p>Aktif ve arşivlenmiş bütün kovanların adları, konumları ve teknik kimlikleri.</p></div><div><a href="/api/export/hives.csv" download>CSV indir</a><a href="/api/export/hives.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">↗</span><h3>Tüm olaylar</h3><p>Model sonuçları, güven değerleri, zamanlar ve kovan bilgileri.</p></div><div><a href="/api/export/events.csv" download>CSV indir</a><a href="/api/export/events.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">!</span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">≡</span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
+        </div>
       </section>
     </div>
   </main>

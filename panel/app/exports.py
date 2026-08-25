@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import csv
+import io
+import json
+from datetime import datetime
+from typing import Literal
+
+from .database import EventStore
+
+
+Dataset = Literal["hives", "events", "alarms", "reports"]
+FileFormat = Literal["csv", "json"]
+
+
+def export_rows(store: EventStore, dataset: Dataset) -> list[dict]:
+    hives = store.hives(include_inactive=True)
+    hive_names = {hive.hive_id: hive.name for hive in hives}
+    if dataset == "hives":
+        return [hive.model_dump(mode="json") for hive in hives]
+    if dataset in {"events", "alarms"}:
+        events = store.recent(1_000_000)
+        if dataset == "alarms":
+            events = [event for event in events if event.event == "queenless_suspected"]
+        return [
+            {
+                "id": event.id,
+                "hive_id": event.hive_id,
+                "hive_name": hive_names.get(event.hive_id, "Bilinmeyen kovan"),
+                "timestamp": event.timestamp.isoformat(),
+                "event": event.event,
+                "confidence": event.confidence,
+                "received_at": event.alindi.isoformat(),
+                "acknowledged_at": event.acknowledged_at.isoformat() if event.acknowledged_at else None,
+            }
+            for event in events
+        ]
+    reports = store.reports(1_000_000)
+    return [
+        {
+            "id": report.id,
+            "period_start": report.period_start.isoformat(),
+            "period_end": report.period_end.isoformat(),
+            "summary": report.summary,
+            "recommendations": report.recommendations,
+            "hive_ids": report.hive_ids,
+            "created_at": report.created_at.isoformat(),
+        }
+        for report in reports
+    ]
+
+
+def build_export(store: EventStore, dataset: Dataset, file_format: FileFormat) -> tuple[bytes, str, str]:
+    rows = export_rows(store, dataset)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"waggle-{dataset}-{stamp}.{file_format}"
+    if file_format == "json":
+        content = json.dumps(rows, ensure_ascii=False, indent=2).encode("utf-8")
+        return content, "application/json; charset=utf-8", filename
+
+    output = io.StringIO()
+    fieldnames = list(rows[0].keys()) if rows else _empty_fieldnames(dataset)
+    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(
+            {
+                key: json.dumps(value, ensure_ascii=False) if isinstance(value, list) else value
+                for key, value in row.items()
+            }
+        )
+    return ("\ufeff" + output.getvalue()).encode("utf-8"), "text/csv; charset=utf-8", filename
+
+
+def _empty_fieldnames(dataset: Dataset) -> list[str]:
+    return {
+        "hives": ["hive_id", "name", "location", "active", "created_at"],
+        "events": ["id", "hive_id", "hive_name", "timestamp", "event", "confidence", "received_at", "acknowledged_at"],
+        "alarms": ["id", "hive_id", "hive_name", "timestamp", "event", "confidence", "received_at", "acknowledged_at"],
+        "reports": ["id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "created_at"],
+    }[dataset]

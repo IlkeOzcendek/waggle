@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 import requests
 
 from .database import EventStore
+from .exports import build_export
 from .models import DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, WeatherState
 from .auth import (
     ADMIN_USERNAME,
@@ -196,6 +197,20 @@ def create_report(report: ReportIn) -> Report:
 @app.get("/api/reports", response_model=list[Report])
 def list_reports(limit: int = Query(default=10, ge=1, le=100)) -> list[Report]:
     return store.reports(limit)
+
+
+@app.get("/api/export/{dataset}.{file_format}")
+def export_data(dataset: str, file_format: str) -> Response:
+    if dataset not in {"hives", "events", "alarms", "reports"}:
+        raise HTTPException(status_code=404, detail="Dışa aktarma veri kümesi bulunamadı")
+    if file_format not in {"csv", "json"}:
+        raise HTTPException(status_code=404, detail="Dışa aktarma biçimi desteklenmiyor")
+    content, media_type, filename = build_export(store, dataset, file_format)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/weather", response_model=WeatherState)

@@ -115,6 +115,10 @@ The **Alarmlar** view collects critical queenless-suspected events across all
 hives. Open alarms can be acknowledged after a physical inspection and remain
 available in the resolved history for traceability.
 
+Authenticated panel users can download hives, all events, critical alarms, and
+weekly reports from **Dışa Aktar**. CSV exports include a UTF-8 marker for Excel;
+JSON exports preserve structured recommendation and hive identifier lists.
+
 ## Send an event from an edge device
 
 Panel users authenticate with a browser session. Edge services use a separate
