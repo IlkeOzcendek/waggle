@@ -15,7 +15,7 @@ import requests
 
 from .database import EventStore
 from .exports import build_export
-from .models import ComponentStatus, DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SystemStatus, WeatherState
+from .models import AppSettings, ComponentStatus, DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SystemStatus, WeatherState
 from .auth import (
     ADMIN_USERNAME,
     COOKIE_NAME,
@@ -168,7 +168,25 @@ def acknowledge_event(event_id: int) -> HiveEvent:
 
 @app.get("/api/dashboard", response_model=DashboardState)
 def dashboard() -> DashboardState:
-    return DashboardState(hives=store.summaries(), events=store.recent(30))
+    settings = AppSettings(**store.settings())
+    return DashboardState(hives=store.summaries(settings.alarm_threshold), events=store.recent(30))
+
+
+@app.get("/api/settings", response_model=AppSettings)
+def get_settings() -> AppSettings:
+    return AppSettings(**store.settings())
+
+
+@app.put("/api/settings", response_model=AppSettings)
+def update_settings(settings: AppSettings) -> AppSettings:
+    global weather_cache
+    cleaned = settings.model_copy(update={
+        "panel_name": settings.panel_name.strip(),
+        "location_name": settings.location_name.strip(),
+    })
+    saved = AppSettings(**store.update_settings(cleaned.model_dump()))
+    weather_cache = None
+    return saved
 
 
 @app.get("/api/hives", response_model=list[Hive])
@@ -269,8 +287,9 @@ def weather() -> WeatherState:
         )
         response.raise_for_status()
         current = response.json()["current"]
+        settings = AppSettings(**store.settings())
         state = WeatherState(
-            location=WEATHER_LOCATION,
+            location=settings.location_name or WEATHER_LOCATION,
             temperature_c=current["temperature_2m"],
             humidity_percent=current["relative_humidity_2m"],
             wind_kmh=current["wind_speed_10m"],

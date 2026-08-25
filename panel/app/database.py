@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS reports (
     hive_ids TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    panel_name TEXT NOT NULL,
+    location_name TEXT NOT NULL,
+    alarm_threshold REAL NOT NULL,
+    sound_enabled INTEGER NOT NULL,
+    refresh_seconds INTEGER NOT NULL
+);
 """
 
 
@@ -76,6 +84,11 @@ class EventStore:
             connection.executemany(
                 "INSERT OR IGNORE INTO hives (hive_id, name, location, created_at) VALUES (?, ?, ?, ?)",
                 defaults,
+            )
+            connection.execute(
+                """INSERT OR IGNORE INTO settings
+                (id, panel_name, location_name, alarm_threshold, sound_enabled, refresh_seconds)
+                VALUES (1, 'Waggle', 'Demo Kovanları', 0.85, 1, 5)"""
             )
 
     @staticmethod
@@ -206,7 +219,7 @@ class EventStore:
             row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return self._event(row) if row else None
 
-    def summaries(self) -> list[HiveSummary]:
+    def summaries(self, alarm_threshold: float = 0.85) -> list[HiveSummary]:
         summaries: list[HiveSummary] = []
         with self.connect() as connection:
             hives = connection.execute(
@@ -234,7 +247,7 @@ class EventStore:
                 event = self._event(row)
                 status = "normal"
                 if event.event == "queenless_suspected":
-                    status = "kritik" if event.confidence >= 0.85 else "uyari"
+                    status = "kritik" if event.confidence >= alarm_threshold else "uyari"
                 elif event.event == "uncertain":
                     status = "uyari"
                 summaries.append(
@@ -249,6 +262,29 @@ class EventStore:
                     )
                 )
         return summaries
+
+    def settings(self) -> dict[str, object]:
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+        return {
+            "panel_name": row["panel_name"],
+            "location_name": row["location_name"],
+            "alarm_threshold": row["alarm_threshold"],
+            "sound_enabled": bool(row["sound_enabled"]),
+            "refresh_seconds": row["refresh_seconds"],
+        }
+
+    def update_settings(self, values: dict[str, object]) -> dict[str, object]:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE settings SET panel_name = ?, location_name = ?, alarm_threshold = ?,
+                sound_enabled = ?, refresh_seconds = ? WHERE id = 1""",
+                (
+                    values["panel_name"], values["location_name"], values["alarm_threshold"],
+                    int(bool(values["sound_enabled"])), values["refresh_seconds"],
+                ),
+            )
+        return self.settings()
 
     def add_report(self, report: ReportIn) -> Report:
         created_at = datetime.now(timezone.utc)

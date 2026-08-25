@@ -11,6 +11,9 @@ const managedHives = document.querySelector("#managed-hives");
 const alarmsList = document.querySelector("#alarms-list");
 const alarmFilter = document.querySelector("#alarm-filter");
 let soundEnabled = true;
+let alarmThreshold = .85;
+let refreshSeconds = 5;
+let refreshTimer = null;
 let lastCriticalId = null;
 let latestEvents = [];
 let latestReports = [];
@@ -88,7 +91,7 @@ function render(data) {
   if (selectedHiveId) renderHiveDetail();
   updatedEl.textContent = `Son güncelleme ${dateLabel(data.generated_at)}`;
 
-  const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= .85);
+  const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= alarmThreshold);
   if (critical && critical.id !== lastCriticalId) {
     lastCriticalId = critical.id;
     alertEl.textContent = `${hiveLabel(critical.hive_id)}: Ana arı kaybı şüphesi (${Math.round(critical.confidence * 100)}%)`;
@@ -152,6 +155,60 @@ function showView(viewName) {
   if (viewName === "hives") refreshManagedHives();
   if (viewName === "alarms") refreshAlarms();
   if (viewName === "status") refreshSystemStatus();
+  if (viewName === "settings") loadSettings();
+}
+
+function applySettings(settings) {
+  soundEnabled = settings.sound_enabled;
+  alarmThreshold = settings.alarm_threshold;
+  refreshSeconds = settings.refresh_seconds;
+  soundButton.textContent = `Sesli alarm: ${soundEnabled ? "açık" : "kapalı"}`;
+  document.querySelector("#panel-name").textContent = settings.panel_name;
+  document.title = `${settings.panel_name} | Kovan İzleme`;
+  document.querySelector("#settings-panel-name").value = settings.panel_name;
+  document.querySelector("#settings-location").value = settings.location_name;
+  document.querySelector("#settings-threshold").value = Math.round(settings.alarm_threshold * 100);
+  document.querySelector("#threshold-value").textContent = `%${Math.round(settings.alarm_threshold * 100)}`;
+  document.querySelector("#settings-sound").checked = settings.sound_enabled;
+  document.querySelector("#settings-refresh").value = String(settings.refresh_seconds);
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(refresh, refreshSeconds * 1000);
+}
+
+async function loadSettings() {
+  const response = await fetch("/api/settings");
+  if (!response.ok) return;
+  applySettings(await response.json());
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('[type="submit"]');
+  const message = document.querySelector("#settings-message");
+  button.disabled = true;
+  message.textContent = "";
+  try {
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        panel_name: form.panel_name.value.trim(),
+        location_name: form.location_name.value.trim(),
+        alarm_threshold: Number(form.alarm_threshold.value) / 100,
+        sound_enabled: form.sound_enabled.checked,
+        refresh_seconds: Number(form.refresh_seconds.value),
+      }),
+    });
+    if (!response.ok) throw new Error("Ayarlar kaydedilemedi");
+    applySettings(await response.json());
+    message.textContent = "Ayarlar kaydedildi ve hemen uygulanmaya başladı.";
+    await Promise.all([refresh(), refreshContext()]);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderSystemStatus(data) {
@@ -409,8 +466,14 @@ alarmsList.addEventListener("click", event => {
   if (button) acknowledgeEvent(button.dataset.alarmAck);
 });
 document.querySelector("#refresh-status").addEventListener("click", refreshSystemStatus);
-refresh(); refreshContext(); refreshAlarms();
-setInterval(refresh, 2500);
+document.querySelector("#settings-threshold").addEventListener("input", event => {
+  document.querySelector("#threshold-value").textContent = `%${event.target.value}`;
+});
+document.querySelector("#settings-form").addEventListener("submit", saveSettings);
+loadSettings().finally(() => {
+  if (!refreshTimer) refreshTimer = setInterval(refresh, refreshSeconds * 1000);
+  refresh(); refreshContext(); refreshAlarms();
+});
 setInterval(refreshContext, 300000);
 const logoutButton = document.querySelector("#logout-button");
 const currentUser = document.querySelector("#current-user");

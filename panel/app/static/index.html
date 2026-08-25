@@ -10,7 +10,7 @@
   <header>
     <div>
       <p class="eyebrow">EDGE AI KOVAN İZLEME</p>
-      <h1>Waggle</h1>
+      <h1 id="panel-name">Waggle</h1>
       <p class="tagline">Kovanları dinleyen yapay zekâ</p>
     </div>
     <div class="header-actions"><div class="connection"><span></span> Sistem bağlı</div><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
@@ -23,6 +23,7 @@
     <button class="nav-button" data-view="reports" type="button">Raporlar</button>
     <button class="nav-button" data-view="exports" type="button">Dışa Aktar</button>
     <button class="nav-button" data-view="status" type="button">Sistem Durumu</button>
+    <button class="nav-button" data-view="settings" type="button">Ayarlar</button>
   </nav>
 
   <main>
@@ -141,9 +142,33 @@
         <p id="status-updated" class="status-updated"></p>
       </section>
     </div>
+
+    <div id="settings-view" class="app-view" hidden>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">KİŞİSELLEŞTİRME</p><h2>Ayarlar</h2></div></div>
+        <p class="management-intro">Panel adını, konum bilgisini ve alarm davranışını buradan değiştirebilirsiniz.</p>
+        <form id="settings-form" class="settings-form">
+          <article>
+            <div><h3>Panel bilgileri</h3><p>Kullanıcıların panelde göreceği ad ve saha konumu.</p></div>
+            <label for="settings-panel-name">Panel adı<input id="settings-panel-name" name="panel_name" required minlength="2" maxlength="60"></label>
+            <label for="settings-location">Kovanlık konumu<input id="settings-location" name="location_name" required minlength="2" maxlength="100"></label>
+          </article>
+          <article>
+            <div><h3>Alarm davranışı</h3><p>Model güveni bu değere ulaştığında olay kritik alarm kabul edilir.</p></div>
+            <label for="settings-threshold">Kritik alarm eşiği <strong id="threshold-value">%85</strong><input id="settings-threshold" name="alarm_threshold" type="range" min="50" max="99" step="1" value="85"></label>
+            <label class="switch-row" for="settings-sound"><span><strong>Sesli alarm</strong><small>Kritik olay geldiğinde uyarı sesi çal.</small></span><input id="settings-sound" name="sound_enabled" type="checkbox"></label>
+          </article>
+          <article>
+            <div><h3>Ekran yenileme</h3><p>Kovan bilgilerinin kaç saniyede bir güncelleneceğini seçin.</p></div>
+            <label for="settings-refresh">Yenileme sıklığı<select id="settings-refresh" name="refresh_seconds"><option value="2">2 saniye</option><option value="5">5 saniye</option><option value="10">10 saniye</option><option value="30">30 saniye</option><option value="60">60 saniye</option></select></label>
+          </article>
+          <div class="settings-actions"><p id="settings-message" role="status"></p><button class="primary-button" type="submit">Ayarları kaydet</button></div>
+        </form>
+      </section>
+    </div>
   </main>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=15"></script>
+  <script src="/static/panel.js?v=16"></script>
 </body>
 </html>

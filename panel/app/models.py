@@ -96,3 +96,11 @@ class SystemStatus(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     overall: Literal["ok", "attention"]
     components: list[ComponentStatus]
+
+
+class AppSettings(BaseModel):
+    panel_name: str = Field(min_length=2, max_length=60)
+    location_name: str = Field(min_length=2, max_length=100)
+    alarm_threshold: float = Field(ge=0.5, le=0.99)
+    sound_enabled: bool = True
+    refresh_seconds: int = Field(ge=2, le=60)

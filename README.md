@@ -71,6 +71,9 @@ Built for the Microsoft AI Innovators Summer Program 2026 · Aug 3–31, 2026
 The authenticated **Sistem Durumu** page shows database integrity, stored record counts,
 and the latest device/model and report integration activity in user-friendly language.
 
+Panel name, location, critical alarm threshold, alert sound, and refresh interval can be
+changed from the authenticated **Ayarlar** page and are stored persistently in SQLite.
+
 ## Run the panel locally
 
 ```bash

@@ -133,6 +133,20 @@ section + section { margin-top: 44px; }
 .status-card small { display: block; margin-top: 14px; color: var(--teal); font-weight: 700; }
 .status-updated { margin-top: 15px; color: var(--muted); font-size: 12px; text-align: right; }
 .connection.attention span { background: var(--yellow); box-shadow: 0 0 0 5px #fef3c7; }
+.settings-form { display: grid; gap: 14px; }
+.settings-form article { display: grid; grid-template-columns: 1.2fr 1fr 1fr; align-items: center; gap: 24px; padding: 22px; border: 1px solid #ded9cd; border-radius: 17px; background: white; }
+.settings-form h3 { margin: 0 0 6px; font-size: 19px; }
+.settings-form article > div p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.settings-form label { display: grid; gap: 8px; color: var(--ink); font-weight: 750; }
+.settings-form input[type="text"], .settings-form input:not([type]), .settings-form select { width: 100%; margin: 0; padding: 11px 13px; border: 1px solid #d5cfc3; border-radius: 10px; background: white; font: inherit; }
+.settings-form input[type="range"] { width: 100%; accent-color: var(--amber); }
+.settings-form label > strong { color: #8f3d0c; }
+.switch-row { display: flex !important; align-items: center; justify-content: space-between; gap: 18px; }
+.switch-row span strong, .switch-row span small { display: block; }
+.switch-row span small { margin-top: 4px; color: var(--muted); font-weight: 400; }
+.switch-row input { width: 21px; height: 21px; accent-color: var(--teal); }
+.settings-actions { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; }
+.settings-actions p { color: var(--teal); font-size: 13px; }
 .table-wrap { overflow: hidden; border: 1px solid #ded9cd; border-radius: 18px; background: white; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 15px 18px; text-align: left; border-bottom: 1px solid #eeeae1; }
@@ -162,4 +176,4 @@ select { margin-left: 5px; padding: 8px 27px 8px 10px; border: 1px solid #d5cfc3
 .header-actions > span { font-size: .9rem; font-weight: 700; }
 .header-actions button { border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; padding: 8px 13px; cursor: pointer; }
 .hive-name small { display: block; margin-top: 3px; color: #777165; font-size: .7rem; font-weight: 700; letter-spacing: .08em; }
-@media (max-width: 750px) { .status-components { grid-template-columns: 1fr; } }
+@media (max-width: 750px) { .status-components { grid-template-columns: 1fr; } .settings-form article { grid-template-columns: 1fr; } .settings-actions { align-items: flex-start; flex-direction: column; gap: 12px; } }

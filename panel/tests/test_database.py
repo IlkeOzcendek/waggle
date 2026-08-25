@@ -120,6 +120,23 @@ class EventStoreTest(unittest.TestCase):
         self.assertEqual(current["counts"]["events"], 1)
         self.assertIsNotNone(current["last_event_at"])
 
+    def test_settings_are_persistent_and_control_alarm_threshold(self):
+        defaults = self.store.settings()
+        self.assertEqual(defaults["panel_name"], "Waggle")
+        self.assertEqual(defaults["alarm_threshold"], .85)
+        saved = self.store.update_settings({
+            "panel_name": "Arılığım",
+            "location_name": "Ankara",
+            "alarm_threshold": .92,
+            "sound_enabled": False,
+            "refresh_seconds": 10,
+        })
+        self.assertEqual(saved["panel_name"], "Arılığım")
+        self.assertFalse(saved["sound_enabled"])
+        self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), event="queenless_suspected", confidence=.90))
+        self.assertEqual(self.store.summaries(saved["alarm_threshold"])[0].durum, "uyari")
+        self.assertEqual(self.store.summaries(.89)[0].durum, "kritik")
+
 
 if __name__ == "__main__":
     unittest.main()
