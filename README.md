@@ -67,3 +67,24 @@ Public datasets that are no sensors required:
 
 
 Built for the Microsoft AI Innovators Summer Program 2026 · Aug 3–31, 2026
+
+## Run the panel locally
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn panel.app.main:app --reload
+```
+
+Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:
+
+```bash
+python tools/fake_events.py
+```
+
+The API documentation is available at <http://127.0.0.1:8000/docs>. Run the panel tests with:
+
+```bash
+python -m unittest discover -s panel/tests -v
+```

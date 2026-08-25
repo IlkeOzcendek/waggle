@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Waggle | Kovan İzleme</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">EDGE AI KOVAN İZLEME</p>
+      <h1>Waggle</h1>
+      <p class="tagline">Kovanları dinleyen yapay zekâ</p>
+    </div>
+    <div class="connection"><span></span> Sistem bağlı</div>
+  </header>
+
+  <main>
+    <section>
+      <div class="section-title">
+        <div><p class="eyebrow">CANLI DURUM</p><h2>Kovanlar</h2></div>
+        <p id="updated">Veri bekleniyor…</p>
+      </div>
+      <div id="hives" class="hive-grid"></div>
+    </section>
+
+    <section class="feed-section">
+      <div class="section-title">
+        <div><p class="eyebrow">TELEMETRİ</p><h2>Olay akışı</h2></div>
+        <button id="sound-toggle" type="button">Sesli alarm: açık</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th></tr></thead>
+          <tbody id="events"><tr><td colspan="4">Henüz olay yok.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
+  <script src="/static/panel.js"></script>
+</body>
+</html>
+
