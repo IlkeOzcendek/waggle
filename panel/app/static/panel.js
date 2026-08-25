@@ -13,7 +13,9 @@ let lastCriticalId = null;
 let latestEvents = [];
 let latestReports = [];
 let latestHives = [];
+let managedHivesData = [];
 let selectedHiveId = null;
+let editingHiveId = null;
 
 const labels = { normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" };
 const colors = { normal: "#15803d", uyari: "#b7791f", kritik: "#c62828", veri_yok: "#6d7685" };
@@ -81,7 +83,6 @@ function render(data) {
     </article>`).join("");
 
   if (selectedHiveId) renderHiveDetail();
-  renderManagedHives();
   updatedEl.textContent = `Son güncelleme ${dateLabel(data.generated_at)}`;
 
   const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= .85);
@@ -145,6 +146,7 @@ function showView(viewName) {
   document.querySelectorAll(".app-view").forEach(view => { view.hidden = view.id !== `${viewName}-view`; });
   document.querySelectorAll(".nav-button").forEach(button => button.classList.toggle("active", button.dataset.view === viewName));
   window.scrollTo({top: 0, behavior: "smooth"});
+  if (viewName === "hives") refreshManagedHives();
 }
 
 function openHiveDetail(hiveId) {
@@ -154,35 +156,79 @@ function openHiveDetail(hiveId) {
 }
 
 function renderManagedHives() {
-  managedHives.innerHTML = latestHives.length ? latestHives.map(hive => `
-    <article class="managed-hive-row">
+  managedHives.innerHTML = managedHivesData.length ? managedHivesData.map(hive => `
+    <article class="managed-hive-row ${hive.active ? "" : "archived"}">
       <div><strong>${escapeHtml(hive.name)}</strong><span>${hive.location ? escapeHtml(hive.location) : "Konum belirtilmedi"}</span></div>
-      <code>${hive.hive_id}</code>
+      <div class="managed-hive-actions">
+        <code>${hive.hive_id}</code>
+        ${hive.active ? `<button data-edit-hive="${hive.hive_id}" type="button">Düzenle</button><button class="archive-button" data-archive-hive="${hive.hive_id}" type="button">Pasif hâle getir</button>` : `<span class="archived-label">Arşivlendi</span><button data-restore-hive="${hive.hive_id}" type="button">Yeniden etkinleştir</button>`}
+      </div>
     </article>`).join("") : '<p>Henüz kovan eklenmedi.</p>';
 }
 
-async function createHive(event) {
+async function saveHive(event) {
   event.preventDefault();
   const message = document.querySelector("#hive-form-message");
   const submit = hiveForm.querySelector('[type="submit"]');
   submit.disabled = true;
   message.textContent = "";
   try {
-    const response = await fetch("/api/hives", {
-      method: "POST",
+    const response = await fetch(editingHiveId ? `/api/hives/${editingHiveId}` : "/api/hives", {
+      method: editingHiveId ? "PUT" : "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({name: hiveForm.name.value.trim(), location: hiveForm.location.value.trim() || null}),
     });
     if (!response.ok) throw new Error("Kovan kaydedilemedi");
     const hive = await response.json();
-    message.textContent = `${hive.name} ${hive.hive_id} kimliğiyle eklendi.`;
+    const successMessage = editingHiveId ? `${hive.name} güncellendi.` : `${hive.name} ${hive.hive_id} kimliğiyle eklendi.`;
+    editingHiveId = null;
     hiveForm.reset();
+    document.querySelector("#hive-form-title").textContent = "Yeni kovan ekle";
+    document.querySelector("#save-hive-button").textContent = "Kovanı kaydet";
+    message.textContent = successMessage;
     await refresh();
+    await refreshManagedHives();
   } catch (error) {
     message.textContent = error.message;
   } finally {
     submit.disabled = false;
   }
+}
+
+async function refreshManagedHives() {
+  const response = await fetch("/api/hives?include_inactive=true");
+  if (!response.ok) return;
+  managedHivesData = await response.json();
+  renderManagedHives();
+}
+
+function openEditHive(hiveId) {
+  const hive = managedHivesData.find(item => item.hive_id === hiveId);
+  if (!hive) return;
+  editingHiveId = hiveId;
+  hiveForm.hidden = false;
+  hiveForm.name.value = hive.name;
+  hiveForm.location.value = hive.location || "";
+  document.querySelector("#hive-form-title").textContent = `${hive.name} bilgilerini düzenle`;
+  document.querySelector("#save-hive-button").textContent = "Değişiklikleri kaydet";
+  document.querySelector("#hive-name").focus();
+}
+
+async function setHiveActive(hiveId, active) {
+  const action = active ? "restore" : "archive";
+  const response = await fetch(`/api/hives/${hiveId}/${action}`, {method: "POST"});
+  if (!response.ok) throw new Error("Kovan durumu değiştirilemedi");
+  await refresh();
+  await refreshManagedHives();
+}
+
+function resetHiveForm() {
+  editingHiveId = null;
+  hiveForm.hidden = true;
+  hiveForm.reset();
+  document.querySelector("#hive-form-title").textContent = "Yeni kovan ekle";
+  document.querySelector("#save-hive-button").textContent = "Kovanı kaydet";
+  document.querySelector("#hive-form-message").textContent = "";
 }
 
 async function startDemo() {
@@ -266,15 +312,22 @@ document.querySelectorAll(".nav-button").forEach(button => button.addEventListen
   showView(button.dataset.view);
 }));
 document.querySelector("#show-hive-form").addEventListener("click", () => {
+  resetHiveForm();
   hiveForm.hidden = false;
   document.querySelector("#hive-name").focus();
 });
 document.querySelector("#cancel-hive-form").addEventListener("click", () => {
-  hiveForm.hidden = true;
-  hiveForm.reset();
-  document.querySelector("#hive-form-message").textContent = "";
+  resetHiveForm();
 });
-hiveForm.addEventListener("submit", createHive);
+hiveForm.addEventListener("submit", saveHive);
+managedHives.addEventListener("click", event => {
+  const editButton = event.target.closest("[data-edit-hive]");
+  const archiveButton = event.target.closest("[data-archive-hive]");
+  const restoreButton = event.target.closest("[data-restore-hive]");
+  if (editButton) openEditHive(editButton.dataset.editHive);
+  if (archiveButton) setHiveActive(archiveButton.dataset.archiveHive, false);
+  if (restoreButton) setHiveActive(restoreButton.dataset.restoreHive, true);
+});
 refresh(); refreshContext();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);

@@ -43,6 +43,11 @@ class HiveCreate(BaseModel):
     location: str | None = Field(default=None, max_length=160)
 
 
+class HiveUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    location: str | None = Field(default=None, max_length=160)
+
+
 class Hive(HiveCreate):
     hive_id: str
     active: bool = True

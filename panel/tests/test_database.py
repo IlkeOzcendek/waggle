@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from panel.app.database import EventStore
-from panel.app.models import HiveCreate, HiveEventIn, ReportIn
+from panel.app.models import HiveCreate, HiveEventIn, HiveUpdate, ReportIn
 
 
 class EventStoreTest(unittest.TestCase):
@@ -72,6 +72,19 @@ class EventStoreTest(unittest.TestCase):
         summary = self.store.summaries()[3]
         self.assertEqual(summary.name, "Arka Bahçe Kovanı")
         self.assertEqual(summary.durum, "normal")
+
+    def test_update_archive_and_restore_hive(self):
+        updated = self.store.update_hive(
+            "H1", HiveUpdate(name="Yeni Bahçe Kovanı", location="Kuzey bahçesi")
+        )
+        self.assertEqual(updated.name, "Yeni Bahçe Kovanı")
+        archived = self.store.set_hive_active("H1", False)
+        self.assertFalse(archived.active)
+        self.assertFalse(self.store.has_hive("H1"))
+        self.assertEqual(len(self.store.hives(include_inactive=True)), 3)
+        restored = self.store.set_hive_active("H1", True)
+        self.assertTrue(restored.active)
+        self.assertTrue(self.store.has_hive("H1"))
 
 
 if __name__ == "__main__":

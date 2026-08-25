@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import requests
 
 from .database import EventStore
-from .models import DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, Report, ReportIn, WeatherState
+from .models import DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, WeatherState
 from .auth import (
     ADMIN_USERNAME,
     COOKIE_NAME,
@@ -138,13 +138,37 @@ def dashboard() -> DashboardState:
 
 
 @app.get("/api/hives", response_model=list[Hive])
-def list_hives() -> list[Hive]:
-    return store.hives()
+def list_hives(include_inactive: bool = False) -> list[Hive]:
+    return store.hives(include_inactive=include_inactive)
 
 
 @app.post("/api/hives", response_model=Hive, status_code=201)
 def create_hive(hive: HiveCreate) -> Hive:
     return store.add_hive(hive)
+
+
+@app.put("/api/hives/{hive_id}", response_model=Hive)
+def update_hive(hive_id: str, hive: HiveUpdate) -> Hive:
+    updated = store.update_hive(hive_id, hive)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    return updated
+
+
+@app.post("/api/hives/{hive_id}/archive", response_model=Hive)
+def archive_hive(hive_id: str) -> Hive:
+    updated = store.set_hive_active(hive_id, False)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    return updated
+
+
+@app.post("/api/hives/{hive_id}/restore", response_model=Hive)
+def restore_hive(hive_id: str) -> Hive:
+    updated = store.set_hive_active(hive_id, True)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    return updated
 
 
 @app.post("/api/reports", response_model=Report, status_code=201)

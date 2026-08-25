@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 import json
 
-from .models import Hive, HiveCreate, HiveEvent, HiveEventIn, HiveSummary, Report, ReportIn
+from .models import Hive, HiveCreate, HiveEvent, HiveEventIn, HiveSummary, HiveUpdate, Report, ReportIn
 
 
 SCHEMA = """
@@ -43,10 +45,15 @@ class EventStore:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def initialize(self) -> None:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -97,10 +104,11 @@ class EventStore:
             "CREATE INDEX idx_events_hive_time ON events(hive_id, timestamp DESC)"
         )
 
-    def hives(self) -> list[Hive]:
+    def hives(self, include_inactive: bool = False) -> list[Hive]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM hives WHERE active = 1 ORDER BY CAST(SUBSTR(hive_id, 2) AS INTEGER)"
+                "SELECT * FROM hives WHERE active = 1 OR ? = 1 ORDER BY active DESC, CAST(SUBSTR(hive_id, 2) AS INTEGER)",
+                (int(include_inactive),),
             ).fetchall()
         return [self._hive(row) for row in rows]
 
@@ -121,6 +129,21 @@ class EventStore:
             return connection.execute(
                 "SELECT 1 FROM hives WHERE hive_id = ? AND active = 1", (hive_id,)
             ).fetchone() is not None
+
+    def update_hive(self, hive_id: str, hive: HiveUpdate) -> Hive | None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE hives SET name = ?, location = ? WHERE hive_id = ?",
+                (hive.name.strip(), hive.location.strip() if hive.location else None, hive_id),
+            )
+            row = connection.execute("SELECT * FROM hives WHERE hive_id = ?", (hive_id,)).fetchone()
+        return self._hive(row) if row else None
+
+    def set_hive_active(self, hive_id: str, active: bool) -> Hive | None:
+        with self.connect() as connection:
+            connection.execute("UPDATE hives SET active = ? WHERE hive_id = ?", (int(active), hive_id))
+            row = connection.execute("SELECT * FROM hives WHERE hive_id = ?", (hive_id,)).fetchone()
+        return self._hive(row) if row else None
 
     def add(self, event: HiveEventIn) -> HiveEvent:
         received_at = datetime.now(timezone.utc)

@@ -93,6 +93,10 @@ Authenticated users can add hives from **Kovanlarım**. The server assigns the
 next technical identifier automatically (`H4`, `H5`, and so on), while the user
 only enters a friendly name and an optional location.
 
+Hive names and locations can be edited later. Archiving removes a hive from the
+live dashboard and blocks new events without deleting its historical data; an
+archived hive can be restored from **Kovanlarım** at any time.
+
 Python 3.10+ is recommended. Python 3.9 is supported through the conditional `eval_type_backport` dependency in `requirements.txt`.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:
