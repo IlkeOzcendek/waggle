@@ -15,10 +15,12 @@ from .models import DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, Hi
 from .auth import (
     ADMIN_USERNAME,
     COOKIE_NAME,
+    DEVICE_KEY_HEADER,
     SESSION_SECONDS,
     create_session,
     read_session,
     verify_credentials,
+    verify_device_key,
 )
 from pydantic import BaseModel
 
@@ -58,6 +60,13 @@ async def require_login(request: Request, call_next):
     username = read_session(request.cookies.get(COOKIE_NAME))
     if username:
         request.state.username = username
+        return await call_next(request)
+    if (
+        path == "/api/events"
+        and request.method == "POST"
+        and verify_device_key(request.headers.get(DEVICE_KEY_HEADER))
+    ):
+        request.state.device_authenticated = True
         return await call_next(request)
     if path.startswith("/api/"):
         return JSONResponse({"detail": "Oturum açmanız gerekiyor"}, status_code=401)

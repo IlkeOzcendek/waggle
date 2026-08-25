@@ -1,6 +1,6 @@
 import unittest
 
-from panel.app.auth import create_session, read_session, verify_credentials
+from panel.app.auth import create_session, read_session, verify_credentials, verify_device_key
 
 
 class AuthenticationTest(unittest.TestCase):
@@ -17,6 +17,11 @@ class AuthenticationTest(unittest.TestCase):
         payload, signature = token.split(".", 1)
         tampered = f"{payload[:-1]}x.{signature}"
         self.assertIsNone(read_session(tampered))
+
+    def test_device_key(self):
+        self.assertTrue(verify_device_key("waggle-device-demo"))
+        self.assertFalse(verify_device_key("wrong-device-key"))
+        self.assertFalse(verify_device_key(None))
 
 
 if __name__ == "__main__":

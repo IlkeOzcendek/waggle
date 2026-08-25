@@ -101,6 +101,28 @@ The **Alarmlar** view collects critical queenless-suspected events across all
 hives. Open alarms can be acknowledged after a physical inspection and remain
 available in the resolved history for traceability.
 
+## Send an event from an edge device
+
+Panel users authenticate with a browser session. Edge devices use a separate
+`X-Device-Key` that can only submit events. Set a strong key on both the server
+and device before deployment:
+
+```bash
+export WAGGLE_DEVICE_KEY="replace-with-a-long-random-key"
+uvicorn panel.app.main:app --reload
+```
+
+Send a model result from another terminal:
+
+```bash
+export WAGGLE_DEVICE_KEY="replace-with-a-long-random-key"
+python tools/send_event.py --hive H4 --event queenless_suspected --confidence 0.91
+```
+
+The client retries temporary failures and stores unsent events in
+`.waggle_pending_events.jsonl`. On the next run it sends queued events first.
+For local demos, both sides default to `waggle-device-demo`.
+
 Python 3.10+ is recommended. Python 3.9 is supported through the conditional `eval_type_backport` dependency in `requirements.txt`.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:

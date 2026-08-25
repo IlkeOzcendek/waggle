@@ -13,6 +13,7 @@ __pycache__/
 # Database
 *.db
 *.sqlite
+.waggle_pending_events.jsonl
 
 # Trained models, large files
 models/

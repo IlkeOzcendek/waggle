@@ -11,6 +11,8 @@ import time
 COOKIE_NAME = "waggle_session"
 SESSION_SECONDS = int(os.getenv("WAGGLE_SESSION_SECONDS", "28800"))
 ADMIN_USERNAME = os.getenv("WAGGLE_ADMIN_USERNAME", "admin")
+DEVICE_KEY_HEADER = "X-Device-Key"
+_DEVICE_KEY = os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo")
 _PASSWORD = os.getenv("WAGGLE_ADMIN_PASSWORD", "waggle-demo")
 _PASSWORD_SALT = os.getenv("WAGGLE_PASSWORD_SALT", "waggle-local-panel").encode()
 _PASSWORD_HASH = hashlib.pbkdf2_hmac("sha256", _PASSWORD.encode(), _PASSWORD_SALT, 210_000)
@@ -22,6 +24,10 @@ def verify_credentials(username: str, password: str) -> bool:
     return hmac.compare_digest(username, ADMIN_USERNAME) and hmac.compare_digest(
         candidate, _PASSWORD_HASH
     )
+
+
+def verify_device_key(device_key: str | None) -> bool:
+    return bool(device_key) and hmac.compare_digest(device_key, _DEVICE_KEY)
 
 
 def create_session(username: str) -> str:
