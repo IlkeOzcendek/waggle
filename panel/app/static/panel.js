@@ -151,6 +151,37 @@ function showView(viewName) {
   window.scrollTo({top: 0, behavior: "smooth"});
   if (viewName === "hives") refreshManagedHives();
   if (viewName === "alarms") refreshAlarms();
+  if (viewName === "status") refreshSystemStatus();
+}
+
+function renderSystemStatus(data) {
+  const overview = document.querySelector("#status-overview");
+  overview.className = `status-overview ${data.overall}`;
+  overview.innerHTML = `<span class="status-pulse"></span><div><strong>${data.overall === "ok" ? "Tüm sistemler çalışıyor" : "Sistem çalışıyor, bazı bağlantılar veri bekliyor"}</strong><p>${data.overall === "ok" ? "Panel ve bütün entegrasyonlar güncel veri üretiyor." : "Bekleyen bileşenlerin ayrıntılarını aşağıda görebilirsiniz."}</p></div>`;
+  const statusLabels = {ok: "Çalışıyor", waiting: "Veri bekleniyor", warning: "Kontrol gerekli"};
+  document.querySelector("#status-components").innerHTML = data.components.map(component => `
+    <article class="status-card ${component.status}">
+      <span class="component-dot" aria-hidden="true"></span>
+      <div><div class="status-card-title"><h3>${escapeHtml(component.name)}</h3><span>${statusLabels[component.status]}</span></div><strong>${escapeHtml(component.summary)}</strong><p>${escapeHtml(component.detail)}</p>${component.last_seen_at ? `<small>Son bağlantı: ${dateLabel(component.last_seen_at)}</small>` : ""}</div>
+    </article>`).join("");
+  document.querySelector("#status-updated").textContent = `Son kontrol: ${dateLabel(data.generated_at)}`;
+  const header = document.querySelector(".connection");
+  header.classList.toggle("attention", data.overall !== "ok");
+  header.lastChild.textContent = data.overall === "ok" ? " Sistem bağlı" : " Sistem çalışıyor";
+}
+
+async function refreshSystemStatus() {
+  const button = document.querySelector("#refresh-status");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/system-status");
+    if (!response.ok) throw new Error("Sistem durumu alınamadı");
+    renderSystemStatus(await response.json());
+  } catch (error) {
+    document.querySelector("#status-overview").innerHTML = `<span class="status-pulse"></span><div><strong>Durum alınamadı</strong><p>${escapeHtml(error.message)}</p></div>`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function openHiveDetail(hiveId) {
@@ -377,6 +408,7 @@ alarmsList.addEventListener("click", event => {
   const button = event.target.closest("[data-alarm-ack]");
   if (button) acknowledgeEvent(button.dataset.alarmAck);
 });
+document.querySelector("#refresh-status").addEventListener("click", refreshSystemStatus);
 refresh(); refreshContext(); refreshAlarms();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);

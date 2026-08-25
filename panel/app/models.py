@@ -81,3 +81,18 @@ class WeatherState(BaseModel):
     wind_kmh: float
     weather_code: int
     observed_at: datetime
+
+
+class ComponentStatus(BaseModel):
+    key: str
+    name: str
+    status: Literal["ok", "waiting", "warning"]
+    summary: str
+    detail: str
+    last_seen_at: datetime | None = None
+
+
+class SystemStatus(BaseModel):
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    overall: Literal["ok", "attention"]
+    components: list[ComponentStatus]

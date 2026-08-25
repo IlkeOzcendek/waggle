@@ -68,6 +68,9 @@ Public datasets that are no sensors required:
 
 Built for the Microsoft AI Innovators Summer Program 2026 · Aug 3–31, 2026
 
+The authenticated **Sistem Durumu** page shows database integrity, stored record counts,
+and the latest device/model and report integration activity in user-friendly language.
+
 ## Run the panel locally
 
 ```bash

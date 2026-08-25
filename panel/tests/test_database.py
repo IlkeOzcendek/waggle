@@ -110,6 +110,16 @@ class EventStoreTest(unittest.TestCase):
         self.assertEqual(backup_store.recent()[0].hive_id, "H2")
         self.assertEqual(len(backup_store.hives(include_inactive=True)), 3)
 
+    def test_diagnostics_report_counts_and_last_integration_activity(self):
+        empty = self.store.diagnostics()
+        self.assertEqual(empty["integrity"], "ok")
+        self.assertEqual(empty["counts"], {"hives": 3, "events": 0, "reports": 0})
+        self.assertIsNone(empty["last_event_at"])
+        self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), event="healthy", confidence=.96))
+        current = self.store.diagnostics()
+        self.assertEqual(current["counts"]["events"], 1)
+        self.assertIsNotNone(current["last_event_at"])
+
 
 if __name__ == "__main__":
     unittest.main()

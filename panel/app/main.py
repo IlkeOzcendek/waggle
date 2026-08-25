@@ -15,7 +15,7 @@ import requests
 
 from .database import EventStore
 from .exports import build_export
-from .models import DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, WeatherState
+from .models import ComponentStatus, DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SystemStatus, WeatherState
 from .auth import (
     ADMIN_USERNAME,
     COOKIE_NAME,
@@ -125,6 +125,22 @@ def panel() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/system-status", response_model=SystemStatus)
+def system_status() -> SystemStatus:
+    diagnostics = store.diagnostics()
+    counts = diagnostics["counts"]
+    last_event = diagnostics["last_event_at"]
+    last_report = diagnostics["last_report_at"]
+    database_ok = diagnostics["integrity"] == "ok"
+    components = [
+        ComponentStatus(key="panel", name="Waggle paneli", status="ok", summary="Panel çalışıyor", detail="Kullanıcı arayüzü ve API istekleri yanıt veriyor."),
+        ComponentStatus(key="database", name="Veri kayıt sistemi", status="ok" if database_ok else "warning", summary="Veritabanı sağlam" if database_ok else "Veritabanını kontrol edin", detail=f'{counts["hives"]} kovan, {counts["events"]} olay ve {counts["reports"]} rapor kayıtlı.'),
+        ComponentStatus(key="device", name="Kovan cihazları ve yapay zekâ modeli", status="ok" if last_event else "waiting", summary="Canlı veri alınıyor" if last_event else "İlk veri bekleniyor", detail="Cihaz veya model sonuçları güvenli bağlantı üzerinden panele ulaşıyor." if last_event else "Ilke'nin modeli ya da bir kovan cihazı ilk olayı gönderdiğinde burada bağlantı zamanı görünecek.", last_seen_at=last_event),
+        ComponentStatus(key="reports", name="Haftalık yapay zekâ raporları", status="ok" if last_report else "waiting", summary="Rapor entegrasyonu çalışıyor" if last_report else "İlk rapor bekleniyor", detail="Üretilen değerlendirme raporları panele kaydediliyor." if last_report else "İlk haftalık değerlendirme gönderildiğinde burada son rapor zamanı görünecek.", last_seen_at=last_report),
+    ]
+    return SystemStatus(overall="ok" if all(item.status == "ok" for item in components) else "attention", components=components)
 
 
 @app.post("/api/events", response_model=HiveEvent, status_code=201)

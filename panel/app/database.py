@@ -156,6 +156,23 @@ class EventStore:
             target.close()
         return destination_path
 
+    def diagnostics(self) -> dict[str, object]:
+        """Return lightweight, read-only database and integration metrics."""
+        with self.connect() as connection:
+            integrity = connection.execute("PRAGMA quick_check").fetchone()[0]
+            counts = {
+                table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ("hives", "events", "reports")
+            }
+            last_event = connection.execute("SELECT MAX(alindi) FROM events").fetchone()[0]
+            last_report = connection.execute("SELECT MAX(created_at) FROM reports").fetchone()[0]
+        return {
+            "integrity": integrity,
+            "counts": counts,
+            "last_event_at": datetime.fromisoformat(last_event) if last_event else None,
+            "last_report_at": datetime.fromisoformat(last_report) if last_report else None,
+        }
+
     def add(self, event: HiveEventIn) -> HiveEvent:
         received_at = datetime.now(timezone.utc)
         with self.connect() as connection:
