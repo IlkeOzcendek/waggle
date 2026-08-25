@@ -4,13 +4,14 @@ const updatedEl = document.querySelector("#updated");
 const alertEl = document.querySelector("#alert");
 const soundButton = document.querySelector("#sound-toggle");
 const demoButton = document.querySelector("#demo-button");
-const hiveFilter = document.querySelector("#hive-filter");
 const eventFilter = document.querySelector("#event-filter");
 const reportSelect = document.querySelector("#report-select");
 let soundEnabled = true;
 let lastCriticalId = null;
 let latestEvents = [];
 let latestReports = [];
+let latestHives = [];
+let selectedHiveId = null;
 
 const labels = { normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" };
 const colors = { normal: "#15803d", uyari: "#b7791f", kritik: "#c62828", veri_yok: "#6d7685" };
@@ -52,16 +53,25 @@ function beep() {
 
 function render(data) {
   latestEvents = data.events;
+  latestHives = data.hives;
+  const counts = data.hives.reduce((result, hive) => {
+    result[hive.durum] = (result[hive.durum] || 0) + 1;
+    return result;
+  }, {});
+  document.querySelector("#summary-total").textContent = data.hives.length;
+  document.querySelector("#summary-normal").textContent = counts.normal || 0;
+  document.querySelector("#summary-warning").textContent = counts.uyari || 0;
+  document.querySelector("#summary-critical").textContent = counts.kritik || 0;
   hivesEl.innerHTML = data.hives.map(hive => `
     <article class="hive-card" style="--status:${colors[hive.durum]}">
       <div class="hive-head"><span class="hive-name">${hiveNames[hive.hive_id] || "Kovan"}<small>${hive.hive_id}</small></span><span class="badge">${labels[hive.durum]}</span></div>
       <div class="confidence">${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</div>
       <div class="confidence-label">model güveni</div>
       <div class="event-time">${dateLabel(hive.timestamp)}</div>
+      <button class="hive-detail-button" data-hive-detail="${hive.hive_id}" type="button">Detayları gör <span>→</span></button>
     </article>`).join("");
 
-  renderEvents();
-  renderChart(data.events);
+  if (selectedHiveId) renderHiveDetail();
   updatedEl.textContent = `Son güncelleme ${dateLabel(data.generated_at)}`;
 
   const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= .85);
@@ -75,7 +85,7 @@ function render(data) {
 
 function renderEvents() {
   const filtered = latestEvents.filter(event =>
-    (hiveFilter.value === "all" || event.hive_id === hiveFilter.value) &&
+    (!selectedHiveId || event.hive_id === selectedHiveId) &&
     (eventFilter.value === "all" || event.event === eventFilter.value)
   );
   eventsEl.innerHTML = filtered.length ? filtered.map(event => `
@@ -92,7 +102,8 @@ function renderChart(events) {
     const y = 195 - value * 1.7;
     return `<line class="grid-line" x1="45" y1="${y}" x2="885" y2="${y}"/><text class="axis-label" x="5" y="${y + 4}">%${value}</text>`;
   }).join("");
-  const series = Object.keys(colors).map(hiveId => {
+  const hiveIds = selectedHiveId ? [selectedHiveId] : Object.keys(colors);
+  const series = hiveIds.map(hiveId => {
     const values = events.filter(event => event.hive_id === hiveId).slice(0, 12).reverse();
     if (!values.length) return "";
     const points = values.map((event, index) => {
@@ -102,6 +113,34 @@ function renderChart(events) {
     return `<polyline class="chart-line" stroke="${colors[hiveId]}" points="${points.map(point => `${point.x},${point.y}`).join(" ")}"/>${points.map(point => `<circle class="chart-point" fill="${colors[hiveId]}" cx="${point.x}" cy="${point.y}" r="6"/>`).join("")}`;
   }).join("");
   svg.innerHTML = grid + (series || '<text class="chart-empty" x="450" y="110">Grafik için olay bekleniyor</text>');
+}
+
+function renderHiveDetail() {
+  const hive = latestHives.find(item => item.hive_id === selectedHiveId);
+  if (!hive) return;
+  document.querySelector("#detail-title").textContent = hiveLabel(hive.hive_id);
+  const status = document.querySelector("#detail-status");
+  status.textContent = labels[hive.durum];
+  status.style.setProperty("--status", colors[hive.durum]);
+  document.querySelector("#detail-summary").innerHTML = `
+    <article><span>Güncel durum</span><strong style="color:${colors[hive.durum]}">${labels[hive.durum]}</strong></article>
+    <article><span>Model güveni</span><strong>${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</strong></article>
+    <article><span>Son sinyal</span><strong>${dateLabel(hive.timestamp)}</strong></article>`;
+  document.querySelector("#chart-legend").innerHTML = `<span class="${hive.hive_id.toLowerCase()}-dot">${hiveLabel(hive.hive_id)}</span>`;
+  renderChart(latestEvents);
+  renderEvents();
+}
+
+function showView(viewName) {
+  document.querySelectorAll(".app-view").forEach(view => { view.hidden = view.id !== `${viewName}-view`; });
+  document.querySelectorAll(".nav-button").forEach(button => button.classList.toggle("active", button.dataset.view === viewName));
+  window.scrollTo({top: 0, behavior: "smooth"});
+}
+
+function openHiveDetail(hiveId) {
+  selectedHiveId = hiveId;
+  showView("detail");
+  renderHiveDetail();
 }
 
 async function startDemo() {
@@ -166,13 +205,24 @@ soundButton.addEventListener("click", () => {
   soundButton.textContent = `Sesli alarm: ${soundEnabled ? "açık" : "kapalı"}`;
 });
 demoButton.addEventListener("click", startDemo);
-hiveFilter.addEventListener("change", renderEvents);
 eventFilter.addEventListener("change", renderEvents);
 reportSelect.addEventListener("change", renderSelectedReport);
 eventsEl.addEventListener("click", event => {
   const button = event.target.closest("[data-ack]");
   if (button) acknowledgeEvent(button.dataset.ack);
 });
+hivesEl.addEventListener("click", event => {
+  const button = event.target.closest("[data-hive-detail]");
+  if (button) openHiveDetail(button.dataset.hiveDetail);
+});
+document.querySelector("#back-overview").addEventListener("click", () => {
+  selectedHiveId = null;
+  showView("overview");
+});
+document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => {
+  selectedHiveId = null;
+  showView(button.dataset.view);
+}));
 refresh(); refreshContext();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);
