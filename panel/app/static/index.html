@@ -25,6 +25,19 @@
       <div id="hives" class="hive-grid"></div>
     </section>
 
+    <section class="context-grid">
+      <article class="weather-card">
+        <p class="eyebrow">SAHA BAĞLAMI</p>
+        <div class="weather-main"><div><h2>Hava durumu</h2><p id="weather-location">Yükleniyor…</p></div><strong id="weather-temp">—</strong></div>
+        <div id="weather-details" class="weather-details"><span>Nem —</span><span>Rüzgâr —</span></div>
+      </article>
+      <article class="report-card">
+        <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Son değerlendirme</h2></div><span id="report-period"></span></div>
+        <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
+        <ul id="report-actions" class="report-actions"></ul>
+      </article>
+    </section>
+
     <section class="feed-section">
       <div class="section-title">
         <div><p class="eyebrow">TELEMETRİ</p><h2>Olay akışı</h2></div>
@@ -40,6 +53,6 @@
   </main>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=2"></script>
+  <script src="/static/panel.js?v=4"></script>
 </body>
 </html>

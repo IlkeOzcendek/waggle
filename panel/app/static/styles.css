@@ -26,6 +26,15 @@ main { max-width: 1200px; margin: auto; padding: 38px 24px 80px; }
 section + section { margin-top: 44px; }
 .section-title { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 17px; }
 .hive-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.context-grid { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(420px, 1.6fr); gap: 16px; }
+.weather-card, .report-card { padding: 22px; border: 1px solid #ded9cd; border-radius: 18px; background: var(--card); box-shadow: 0 7px 25px rgb(35 42 53 / 5%); }
+.weather-main { display: flex; justify-content: space-between; align-items: end; margin-top: 12px; }
+.weather-main strong { color: var(--teal); font-size: 48px; line-height: 1; }
+.weather-main p, .report-card #report-period { color: var(--muted); font-size: 13px; }
+.weather-details { display: flex; gap: 24px; margin-top: 28px; padding-top: 16px; border-top: 1px solid #eeeae1; color: var(--muted); }
+.report-summary { font-size: 17px; line-height: 1.6; }
+.report-actions { margin: 16px 0 0; padding-left: 20px; color: var(--teal); }
+.report-actions li + li { margin-top: 7px; }
 .hive-card { position: relative; overflow: hidden; padding: 22px; min-height: 185px; border: 1px solid #ded9cd; border-radius: 18px; background: var(--card); box-shadow: 0 7px 25px rgb(35 42 53 / 5%); }
 .hive-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--status); }
 .hive-head { display: flex; justify-content: space-between; align-items: center; }
@@ -42,5 +51,4 @@ tr:last-child td { border: 0; }
 button { border: 1px solid #d5cfc3; border-radius: 999px; padding: 9px 13px; background: white; color: var(--ink); cursor: pointer; }
 .alert { position: fixed; right: 24px; bottom: 24px; max-width: 390px; padding: 17px 20px; border-radius: 14px; background: #991b1b; color: white; box-shadow: 0 12px 40px rgb(0 0 0 / 25%); transform: translateY(140%); transition: transform .25s ease; }
 .alert.show { transform: translateY(0); }
-@media (max-width: 750px) { .hive-grid { grid-template-columns: 1fr; } header { align-items: flex-start; gap: 24px; } .connection { margin-top: 16px; } th:nth-child(1), td:nth-child(1) { display: none; } }
-
+@media (max-width: 750px) { .hive-grid, .context-grid { grid-template-columns: 1fr; } header { align-items: flex-start; gap: 24px; } .connection { margin-top: 16px; } th:nth-child(1), td:nth-child(1) { display: none; } }

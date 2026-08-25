@@ -83,6 +83,14 @@ Open <http://127.0.0.1:8000>. In a second terminal, activate the same environmen
 python tools/fake_events.py
 ```
 
+To add a demo weekly report, run:
+
+```bash
+python tools/fake_report.py
+```
+
+Weather defaults to the demo hive location. Override it with `WAGGLE_LAT`, `WAGGLE_LON`, and `WAGGLE_LOCATION` before starting the server.
+
 The API documentation is available at <http://127.0.0.1:8000/docs>. Run the panel tests with:
 
 ```bash

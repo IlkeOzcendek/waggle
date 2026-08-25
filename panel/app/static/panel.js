@@ -14,6 +14,12 @@ function dateLabel(value) {
   return new Intl.DateTimeFormat("tr-TR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
 }
 
+function escapeHtml(value) {
+  const element = document.createElement("span");
+  element.textContent = value;
+  return element.innerHTML;
+}
+
 function beep() {
   if (!soundEnabled) return;
   const context = new AudioContext();
@@ -50,11 +56,29 @@ function render(data) {
   }
 }
 
+function renderWeather(weather) {
+  document.querySelector("#weather-location").textContent = weather.location;
+  document.querySelector("#weather-temp").textContent = `${Math.round(weather.temperature_c)}°`;
+  document.querySelector("#weather-details").innerHTML = `<span>Nem %${weather.humidity_percent}</span><span>Rüzgâr ${Math.round(weather.wind_kmh)} km/sa</span>`;
+}
+
+function renderReports(reports) {
+  if (!reports.length) return;
+  const report = reports[0];
+  document.querySelector("#report-period").textContent = `${dateLabel(report.period_start)} – ${dateLabel(report.period_end)}`;
+  document.querySelector("#report-summary").textContent = report.summary;
+  document.querySelector("#report-actions").innerHTML = report.recommendations.map(item => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
 async function refresh() {
   try {
-    const response = await fetch("/api/dashboard");
-    if (!response.ok) throw new Error("API yanıt vermedi");
-    render(await response.json());
+    const [dashboardResponse, weatherResponse, reportsResponse] = await Promise.all([
+      fetch("/api/dashboard"), fetch("/api/weather"), fetch("/api/reports?limit=1")
+    ]);
+    if (!dashboardResponse.ok) throw new Error("API yanıt vermedi");
+    render(await dashboardResponse.json());
+    if (weatherResponse.ok) renderWeather(await weatherResponse.json());
+    if (reportsResponse.ok) renderReports(await reportsResponse.json());
   } catch (error) {
     updatedEl.textContent = "Bağlantı kurulamadı";
   }

@@ -4,7 +4,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import HiveEvent, HiveEventIn, HiveSummary
+import json
+
+from .models import HiveEvent, HiveEventIn, HiveSummary, Report, ReportIn
 
 
 SCHEMA = """
@@ -17,6 +19,15 @@ CREATE TABLE IF NOT EXISTS events (
     alindi TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_hive_time ON events(hive_id, timestamp DESC);
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    recommendations TEXT NOT NULL,
+    hive_ids TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -92,6 +103,43 @@ class EventStore:
                     )
                 )
         return summaries
+
+    def add_report(self, report: ReportIn) -> Report:
+        created_at = datetime.now(timezone.utc)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """INSERT INTO reports
+                (period_start, period_end, summary, recommendations, hive_ids, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    report.period_start.isoformat(),
+                    report.period_end.isoformat(),
+                    report.summary,
+                    json.dumps(report.recommendations, ensure_ascii=False),
+                    json.dumps(report.hive_ids),
+                    created_at.isoformat(),
+                ),
+            )
+            report_id = cursor.lastrowid
+        return Report(id=report_id, created_at=created_at, **report.model_dump())
+
+    def reports(self, limit: int = 10) -> list[Report]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM reports ORDER BY period_end DESC, id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [
+            Report(
+                id=row["id"],
+                period_start=datetime.fromisoformat(row["period_start"]),
+                period_end=datetime.fromisoformat(row["period_end"]),
+                summary=row["summary"],
+                recommendations=json.loads(row["recommendations"]),
+                hive_ids=json.loads(row["hive_ids"]),
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+            for row in rows
+        ]
 
     @staticmethod
     def _event(row: sqlite3.Row) -> HiveEvent:

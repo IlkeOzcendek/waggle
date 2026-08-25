@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from panel.app.database import EventStore
-from panel.app.models import HiveEventIn
+from panel.app.models import HiveEventIn, ReportIn
 
 
 class EventStoreTest(unittest.TestCase):
@@ -29,6 +29,20 @@ class EventStoreTest(unittest.TestCase):
 
     def test_empty_hives_have_no_data_status(self):
         self.assertTrue(all(hive.durum == "veri_yok" for hive in self.store.summaries()))
+
+    def test_add_and_read_report(self):
+        now = datetime.now(timezone.utc)
+        report = ReportIn(
+            period_start=now,
+            period_end=now,
+            summary="Kovanlar için haftalık örnek değerlendirme raporu.",
+            recommendations=["H3 kovanını kontrol edin."],
+            hive_ids=["H1", "H3"],
+        )
+        created = self.store.add_report(report)
+        saved = self.store.reports()[0]
+        self.assertEqual(saved.id, created.id)
+        self.assertEqual(saved.hive_ids, ["H1", "H3"])
 
 
 if __name__ == "__main__":
