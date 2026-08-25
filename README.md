@@ -119,6 +119,10 @@ Authenticated panel users can download hives, all events, critical alarms, and
 weekly reports from **Dışa Aktar**. CSV exports include a UTF-8 marker for Excel;
 JSON exports preserve structured recommendation and hive identifier lists.
 
+The same screen provides a live SQLite backup. It uses SQLite's online backup
+API, so events may continue arriving while a consistent `.db` file is created.
+The temporary server-side copy is removed after the download completes.
+
 ## Send an event from an edge device
 
 Panel users authenticate with a browser session. Edge services use a separate

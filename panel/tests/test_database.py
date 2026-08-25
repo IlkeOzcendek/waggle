@@ -86,6 +86,30 @@ class EventStoreTest(unittest.TestCase):
         self.assertTrue(restored.active)
         self.assertTrue(self.store.has_hive("H1"))
 
+    def test_online_backup_preserves_a_consistent_snapshot(self):
+        self.store.add(
+            HiveEventIn(
+                hive_id="H2",
+                timestamp=datetime.now(timezone.utc),
+                event="uncertain",
+                confidence=.67,
+            )
+        )
+        backup_path = Path(self.tempdir.name) / "backup.db"
+        self.store.backup_to(backup_path)
+        self.store.add(
+            HiveEventIn(
+                hive_id="H1",
+                timestamp=datetime.now(timezone.utc),
+                event="healthy",
+                confidence=.95,
+            )
+        )
+        backup_store = EventStore(backup_path)
+        self.assertEqual(len(backup_store.recent()), 1)
+        self.assertEqual(backup_store.recent()[0].hive_id, "H2")
+        self.assertEqual(len(backup_store.hives(include_inactive=True)), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 import requests
 
 from .database import EventStore
@@ -210,6 +212,25 @@ def export_data(dataset: str, file_format: str) -> Response:
         content=content,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/backup/database")
+def backup_database() -> FileResponse:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    temporary = tempfile.NamedTemporaryFile(prefix="waggle-backup-", suffix=".db", delete=False)
+    backup_path = Path(temporary.name)
+    temporary.close()
+    try:
+        store.backup_to(backup_path)
+    except Exception:
+        backup_path.unlink(missing_ok=True)
+        raise
+    return FileResponse(
+        backup_path,
+        media_type="application/vnd.sqlite3",
+        filename=f"waggle-backup-{timestamp}.db",
+        background=BackgroundTask(backup_path.unlink, missing_ok=True),
     )
 
 

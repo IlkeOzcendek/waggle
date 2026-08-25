@@ -145,6 +145,17 @@ class EventStore:
             row = connection.execute("SELECT * FROM hives WHERE hive_id = ?", (hive_id,)).fetchone()
         return self._hive(row) if row else None
 
+    def backup_to(self, destination: str | Path) -> Path:
+        destination_path = Path(destination)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        target = sqlite3.connect(destination_path)
+        try:
+            with self.connect() as source:
+                source.backup(target)
+        finally:
+            target.close()
+        return destination_path
+
     def add(self, event: HiveEventIn) -> HiveEvent:
         received_at = datetime.now(timezone.utc)
         with self.connect() as connection:
