@@ -8,12 +8,15 @@ const eventFilter = document.querySelector("#event-filter");
 const reportSelect = document.querySelector("#report-select");
 const hiveForm = document.querySelector("#hive-form");
 const managedHives = document.querySelector("#managed-hives");
+const alarmsList = document.querySelector("#alarms-list");
+const alarmFilter = document.querySelector("#alarm-filter");
 let soundEnabled = true;
 let lastCriticalId = null;
 let latestEvents = [];
 let latestReports = [];
 let latestHives = [];
 let managedHivesData = [];
+let alarmEvents = [];
 let selectedHiveId = null;
 let editingHiveId = null;
 
@@ -147,6 +150,7 @@ function showView(viewName) {
   document.querySelectorAll(".nav-button").forEach(button => button.classList.toggle("active", button.dataset.view === viewName));
   window.scrollTo({top: 0, behavior: "smooth"});
   if (viewName === "hives") refreshManagedHives();
+  if (viewName === "alarms") refreshAlarms();
 }
 
 function openHiveDetail(hiveId) {
@@ -268,6 +272,46 @@ async function acknowledgeEvent(eventId) {
   const response = await fetch(`/api/events/${eventId}/acknowledge`, { method: "POST" });
   if (!response.ok) throw new Error("Alarm onaylanamadı");
   await refresh();
+  await refreshAlarms();
+}
+
+function renderAlarms() {
+  const criticalEvents = alarmEvents.filter(event => event.event === "queenless_suspected");
+  const openEvents = criticalEvents.filter(event => !event.acknowledged_at);
+  const navCount = document.querySelector("#nav-alarm-count");
+  navCount.textContent = openEvents.length;
+  navCount.hidden = openEvents.length === 0;
+  document.querySelector("#open-alarm-count").textContent = openEvents.length;
+  const filtered = criticalEvents.filter(event =>
+    alarmFilter.value === "all" ||
+    (alarmFilter.value === "open" && !event.acknowledged_at) ||
+    (alarmFilter.value === "acknowledged" && event.acknowledged_at)
+  );
+  alarmsList.innerHTML = filtered.length ? filtered.map(event => `
+    <article class="alarm-card ${event.acknowledged_at ? "resolved" : "open"}">
+      <div class="alarm-icon" aria-hidden="true">${event.acknowledged_at ? "✓" : "!"}</div>
+      <div class="alarm-content">
+        <div class="alarm-card-head"><div><strong>${escapeHtml(hiveLabel(event.hive_id))}</strong><span>${dateLabel(event.timestamp)}</span></div><span class="alarm-confidence">%${Math.round(event.confidence * 100)} güven</span></div>
+        <h3>Ana arı kaybı şüphesi</h3>
+        <p>${event.acknowledged_at ? `Kontrol edildi: ${dateLabel(event.acknowledged_at)}` : "Kovanın fiziksel olarak kontrol edilmesi öneriliyor."}</p>
+      </div>
+      ${event.acknowledged_at ? '<span class="resolved-label">Kontrol edildi</span>' : `<button class="ack-button alarm-ack-button" data-alarm-ack="${event.id}" type="button">Kontrol edildi olarak işaretle</button>`}
+    </article>`).join("") : `<div class="empty-state"><strong>${alarmFilter.value === "open" ? "Açık alarm yok" : "Bu filtrede alarm yok"}</strong><p>Kovanlarınızın kritik olayları burada görünecek.</p></div>`;
+}
+
+async function refreshAlarms() {
+  const [eventsResponse, hivesResponse] = await Promise.all([
+    fetch("/api/events?limit=200"),
+    fetch("/api/hives?include_inactive=true"),
+  ]);
+  if (hivesResponse.ok) {
+    const hives = await hivesResponse.json();
+    hives.forEach(hive => { hiveNames[hive.hive_id] = hive.name; });
+  }
+  if (eventsResponse.ok) {
+    alarmEvents = await eventsResponse.json();
+    renderAlarms();
+  }
 }
 
 async function refresh() {
@@ -294,6 +338,7 @@ soundButton.addEventListener("click", () => {
 });
 demoButton.addEventListener("click", startDemo);
 eventFilter.addEventListener("change", renderEvents);
+alarmFilter.addEventListener("change", renderAlarms);
 reportSelect.addEventListener("change", renderSelectedReport);
 eventsEl.addEventListener("click", event => {
   const button = event.target.closest("[data-ack]");
@@ -328,7 +373,11 @@ managedHives.addEventListener("click", event => {
   if (archiveButton) setHiveActive(archiveButton.dataset.archiveHive, false);
   if (restoreButton) setHiveActive(restoreButton.dataset.restoreHive, true);
 });
-refresh(); refreshContext();
+alarmsList.addEventListener("click", event => {
+  const button = event.target.closest("[data-alarm-ack]");
+  if (button) acknowledgeEvent(button.dataset.alarmAck);
+});
+refresh(); refreshContext(); refreshAlarms();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);
 const logoutButton = document.querySelector("#logout-button");

@@ -19,6 +19,7 @@
   <nav class="main-nav" aria-label="Ana menü">
     <button class="nav-button active" data-view="overview" type="button">Genel Bakış</button>
     <button class="nav-button" data-view="hives" type="button">Kovanlarım</button>
+    <button class="nav-button" data-view="alarms" type="button">Alarmlar <span id="nav-alarm-count" class="nav-count" hidden>0</span></button>
     <button class="nav-button" data-view="reports" type="button">Raporlar</button>
   </nav>
 
@@ -100,9 +101,20 @@
         <div id="managed-hives" class="managed-hive-list"></div>
       </section>
     </div>
+
+    <div id="alarms-view" class="app-view" hidden>
+      <section>
+        <div class="section-title">
+          <div><p class="eyebrow">ALARM MERKEZİ</p><h2>Kritik olaylar</h2></div>
+          <label>Göster <select id="alarm-filter"><option value="open">Açık alarmlar</option><option value="acknowledged">Kontrol edilenler</option><option value="all">Tümü</option></select></label>
+        </div>
+        <div class="alarm-summary"><div><span>Açık alarm</span><strong id="open-alarm-count">0</strong></div><p>Açık alarmları fiziksel kovan kontrolünden sonra işaretleyin.</p></div>
+        <div id="alarms-list" class="alarms-list"><p>Alarm verileri yükleniyor…</p></div>
+      </section>
+    </div>
   </main>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=12"></script>
+  <script src="/static/panel.js?v=13"></script>
 </body>
 </html>

@@ -97,6 +97,10 @@ Hive names and locations can be edited later. Archiving removes a hive from the
 live dashboard and blocks new events without deleting its historical data; an
 archived hive can be restored from **Kovanlarım** at any time.
 
+The **Alarmlar** view collects critical queenless-suspected events across all
+hives. Open alarms can be acknowledged after a physical inspection and remain
+available in the resolved history for traceability.
+
 Python 3.10+ is recommended. Python 3.9 is supported through the conditional `eval_type_backport` dependency in `requirements.txt`.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:
