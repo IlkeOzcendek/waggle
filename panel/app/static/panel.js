@@ -37,7 +37,7 @@ function render(data) {
 
   eventsEl.innerHTML = data.events.length ? data.events.map(event => `
     <tr><td>${dateLabel(event.timestamp)}</td><td>${event.hive_id}</td>
-    <td class="${event.event === "queenless_suspected" ? "event-critical" : ""}>${event.event === "queenless_suspected" ? "Ana arı kaybı şüphesi" : event.event === "uncertain" ? "Belirsiz" : "Normal"}</td>
+    <td class="${event.event === "queenless_suspected" ? "event-critical" : ""}">${event.event === "queenless_suspected" ? "Ana arı kaybı şüphesi" : event.event === "uncertain" ? "Belirsiz" : "Normal"}</td>
     <td>${Math.round(event.confidence * 100)}%</td></tr>`).join("") : '<tr><td colspan="4">Henüz olay yok.</td></tr>';
   updatedEl.textContent = `Son güncelleme ${dateLabel(data.generated_at)}`;
 
