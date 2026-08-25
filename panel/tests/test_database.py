@@ -30,6 +30,19 @@ class EventStoreTest(unittest.TestCase):
     def test_empty_hives_have_no_data_status(self):
         self.assertTrue(all(hive.durum == "veri_yok" for hive in self.store.summaries()))
 
+    def test_acknowledge_event(self):
+        created = self.store.add(
+            HiveEventIn(
+                hive_id="H3",
+                timestamp=datetime.now(timezone.utc),
+                event="queenless_suspected",
+                confidence=.91,
+            )
+        )
+        acknowledged = self.store.acknowledge(created.id)
+        self.assertIsNotNone(acknowledged.acknowledged_at)
+        self.assertEqual(self.store.recent()[0].id, created.id)
+
     def test_add_and_read_report(self):
         now = datetime.now(timezone.utc)
         report = ReportIn(

@@ -6,9 +6,11 @@ const soundButton = document.querySelector("#sound-toggle");
 const demoButton = document.querySelector("#demo-button");
 const hiveFilter = document.querySelector("#hive-filter");
 const eventFilter = document.querySelector("#event-filter");
+const reportSelect = document.querySelector("#report-select");
 let soundEnabled = true;
 let lastCriticalId = null;
 let latestEvents = [];
+let latestReports = [];
 
 const labels = { normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" };
 const colors = { normal: "#15803d", uyari: "#b7791f", kritik: "#c62828", veri_yok: "#6d7685" };
@@ -67,7 +69,8 @@ function renderEvents() {
   eventsEl.innerHTML = filtered.length ? filtered.map(event => `
     <tr><td>${dateLabel(event.timestamp)}</td><td>${event.hive_id}</td>
     <td class="${event.event === "queenless_suspected" ? "event-critical" : ""}">${event.event === "queenless_suspected" ? "Ana arı kaybı şüphesi" : event.event === "uncertain" ? "Belirsiz" : "Normal"}</td>
-    <td>${Math.round(event.confidence * 100)}%</td></tr>`).join("") : '<tr><td colspan="4">Henüz olay yok.</td></tr>';
+    <td>${Math.round(event.confidence * 100)}%</td>
+    <td>${event.event !== "queenless_suspected" ? "—" : event.acknowledged_at ? '<span class="acknowledged">Kontrol edildi</span>' : `<button class="ack-button" data-ack="${event.id}" type="button">Kontrol edildi olarak işaretle</button>`}</td></tr>`).join("") : '<tr><td colspan="5">Filtreyle eşleşen olay yok.</td></tr>';
 }
 
 function renderChart(events) {
@@ -109,11 +112,23 @@ function renderWeather(weather) {
 }
 
 function renderReports(reports) {
-  if (!reports.length) return;
-  const report = reports[0];
+  latestReports = reports;
+  reportSelect.innerHTML = reports.length ? reports.map((report, index) => `<option value="${report.id}">${index === 0 ? "Son rapor" : dateLabel(report.period_end)}</option>`).join("") : '<option value="">Rapor yok</option>';
+  renderSelectedReport();
+}
+
+function renderSelectedReport() {
+  const report = latestReports.find(item => String(item.id) === reportSelect.value) || latestReports[0];
+  if (!report) return;
   document.querySelector("#report-period").textContent = `${dateLabel(report.period_start)} – ${dateLabel(report.period_end)}`;
   document.querySelector("#report-summary").textContent = report.summary;
   document.querySelector("#report-actions").innerHTML = report.recommendations.map(item => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+async function acknowledgeEvent(eventId) {
+  const response = await fetch(`/api/events/${eventId}/acknowledge`, { method: "POST" });
+  if (!response.ok) throw new Error("Alarm onaylanamadı");
+  await refresh();
 }
 
 async function refresh() {
@@ -128,7 +143,7 @@ async function refresh() {
 
 async function refreshContext() {
   const [weatherResponse, reportsResponse] = await Promise.all([
-    fetch("/api/weather"), fetch("/api/reports?limit=1")
+    fetch("/api/weather"), fetch("/api/reports?limit=10")
   ]);
   if (weatherResponse.ok) renderWeather(await weatherResponse.json());
   if (reportsResponse.ok) renderReports(await reportsResponse.json());
@@ -141,6 +156,11 @@ soundButton.addEventListener("click", () => {
 demoButton.addEventListener("click", startDemo);
 hiveFilter.addEventListener("change", renderEvents);
 eventFilter.addEventListener("change", renderEvents);
+reportSelect.addEventListener("change", renderSelectedReport);
+eventsEl.addEventListener("click", event => {
+  const button = event.target.closest("[data-ack]");
+  if (button) acknowledgeEvent(button.dataset.ack);
+});
 refresh(); refreshContext();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);

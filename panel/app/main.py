@@ -56,6 +56,14 @@ def list_events(limit: int = Query(default=50, ge=1, le=500)) -> list[HiveEvent]
     return store.recent(limit)
 
 
+@app.post("/api/events/{event_id}/acknowledge", response_model=HiveEvent)
+def acknowledge_event(event_id: int) -> HiveEvent:
+    event = store.acknowledge(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Olay bulunamadı")
+    return event
+
+
 @app.get("/api/dashboard", response_model=DashboardState)
 def dashboard() -> DashboardState:
     return DashboardState(hives=store.summaries(), events=store.recent(30))

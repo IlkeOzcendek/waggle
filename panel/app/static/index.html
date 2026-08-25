@@ -32,7 +32,8 @@
         <div id="weather-details" class="weather-details"><span>Nem —</span><span>Rüzgâr —</span></div>
       </article>
       <article class="report-card">
-        <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Son değerlendirme</h2></div><span id="report-period"></span></div>
+        <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Değerlendirme</h2></div><select id="report-select" aria-label="Rapor geçmişi"><option value="">Rapor yok</option></select></div>
+        <span id="report-period" class="report-period"></span>
         <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
         <ul id="report-actions" class="report-actions"></ul>
       </article>
@@ -54,14 +55,14 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th></tr></thead>
-          <tbody id="events"><tr><td colspan="4">Henüz olay yok.</td></tr></tbody>
+          <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th><th>İşlem</th></tr></thead>
+          <tbody id="events"><tr><td colspan="5">Henüz olay yok.</td></tr></tbody>
         </table>
       </div>
     </section>
   </main>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=6"></script>
+  <script src="/static/panel.js?v=7"></script>
 </body>
 </html>

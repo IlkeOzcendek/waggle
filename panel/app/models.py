@@ -19,6 +19,7 @@ class HiveEventIn(BaseModel):
 class HiveEvent(HiveEventIn):
     id: int
     alindi: datetime
+    acknowledged_at: datetime | None = None
 
 
 class HiveSummary(BaseModel):

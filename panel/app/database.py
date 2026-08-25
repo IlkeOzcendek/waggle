@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp TEXT NOT NULL,
     event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
-    alindi TEXT NOT NULL
+    alindi TEXT NOT NULL,
+    acknowledged_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_hive_time ON events(hive_id, timestamp DESC);
 CREATE TABLE IF NOT EXISTS reports (
@@ -44,6 +45,9 @@ class EventStore:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(events)")}
+            if "acknowledged_at" not in columns:
+                connection.execute("ALTER TABLE events ADD COLUMN acknowledged_at TEXT")
 
     def add(self, event: HiveEventIn) -> HiveEvent:
         received_at = datetime.now(timezone.utc)
@@ -67,6 +71,16 @@ class EventStore:
                 "SELECT * FROM events ORDER BY timestamp DESC, id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [self._event(row) for row in rows]
+
+    def acknowledge(self, event_id: int) -> HiveEvent | None:
+        acknowledged_at = datetime.now(timezone.utc)
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE events SET acknowledged_at = ? WHERE id = ? AND acknowledged_at IS NULL",
+                (acknowledged_at.isoformat(), event_id),
+            )
+            row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        return self._event(row) if row else None
 
     def summaries(self, hive_ids: tuple[str, ...] = ("H1", "H2", "H3")) -> list[HiveSummary]:
         summaries: list[HiveSummary] = []
@@ -150,4 +164,9 @@ class EventStore:
             event=row["event"],
             confidence=row["confidence"],
             alindi=datetime.fromisoformat(row["alindi"]),
+            acknowledged_at=(
+                datetime.fromisoformat(row["acknowledged_at"])
+                if "acknowledged_at" in row.keys() and row["acknowledged_at"]
+                else None
+            ),
         )
