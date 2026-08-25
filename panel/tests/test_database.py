@@ -130,9 +130,11 @@ class EventStoreTest(unittest.TestCase):
             "alarm_threshold": .92,
             "sound_enabled": False,
             "refresh_seconds": 10,
+            "onboarding_completed": True,
         })
         self.assertEqual(saved["panel_name"], "Arılığım")
         self.assertFalse(saved["sound_enabled"])
+        self.assertTrue(saved["onboarding_completed"])
         self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), event="queenless_suspected", confidence=.90))
         self.assertEqual(self.store.summaries(saved["alarm_threshold"])[0].durum, "uyari")
         self.assertEqual(self.store.summaries(.89)[0].durum, "kritik")

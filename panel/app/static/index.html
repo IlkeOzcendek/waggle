@@ -162,13 +162,28 @@
             <div><h3>Ekran yenileme</h3><p>Kovan bilgilerinin kaç saniyede bir güncelleneceğini seçin.</p></div>
             <label for="settings-refresh">Yenileme sıklığı<select id="settings-refresh" name="refresh_seconds"><option value="2">2 saniye</option><option value="5">5 saniye</option><option value="10">10 saniye</option><option value="30">30 saniye</option><option value="60">60 saniye</option></select></label>
           </article>
+          <article>
+            <div><h3>Yardım ve başlangıç rehberi</h3><p>Waggle’ın temel kullanım adımlarını yeniden görüntüleyin.</p></div>
+            <button id="reopen-guide" type="button">Başlangıç rehberini aç</button>
+          </article>
           <div class="settings-actions"><p id="settings-message" role="status"></p><button class="primary-button" type="submit">Ayarları kaydet</button></div>
         </form>
       </section>
     </div>
   </main>
 
+  <dialog id="onboarding-dialog" class="onboarding-dialog" aria-labelledby="onboarding-title">
+    <div class="onboarding-head"><div><p class="eyebrow">HIZLI BAŞLANGIÇ</p><h2 id="onboarding-title">Waggle’a hoş geldiniz</h2><p>Dört kısa adımda kovanlarınızı izlemeye başlayın.</p></div><button id="close-guide" type="button" aria-label="Rehberi kapat">×</button></div>
+    <div class="onboarding-steps">
+      <article><span>1</span><div><h3>Kovanınızı ekleyin</h3><p><strong>Kovanlarım</strong> bölümünden anlaşılır bir ad ve konum girin. Teknik sensör kimliğini Waggle otomatik oluşturur.</p></div></article>
+      <article><span>2</span><div><h3>Cihazı veya modeli bağlayın</h3><p>Kovan cihazı ve Ilke’nin modeli güvenli olay adresine veri gönderir. Bağlantıyı <strong>Sistem Durumu</strong> ekranından izleyin.</p></div></article>
+      <article><span>3</span><div><h3>Uyarıları takip edin</h3><p>Kritik bir sonuç geldiğinde <strong>Alarmlar</strong> bölümünü açın. Fiziksel kontrolden sonra alarmı kontrol edildi olarak işaretleyin.</p></div></article>
+      <article><span>4</span><div><h3>Rapor ve yedekleri kullanın</h3><p>Haftalık değerlendirmeleri okuyun; gerektiğinde kayıtları dışa aktarın veya tam veritabanı yedeği indirin.</p></div></article>
+    </div>
+    <div class="onboarding-actions"><small>Bu rehberi daha sonra Ayarlar bölümünden tekrar açabilirsiniz.</small><button id="complete-guide" class="primary-button" type="button">Anladım, panele geç</button></div>
+  </dialog>
+
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=16"></script>
+  <script src="/static/panel.js?v=17"></script>
 </body>
 </html>

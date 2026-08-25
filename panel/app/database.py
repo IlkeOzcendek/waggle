@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS settings (
     location_name TEXT NOT NULL,
     alarm_threshold REAL NOT NULL,
     sound_enabled INTEGER NOT NULL,
-    refresh_seconds INTEGER NOT NULL
+    refresh_seconds INTEGER NOT NULL,
+    onboarding_completed INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -70,6 +71,13 @@ class EventStore:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(events)")}
             if "acknowledged_at" not in columns:
                 connection.execute("ALTER TABLE events ADD COLUMN acknowledged_at TEXT")
+            settings_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(settings)")
+            }
+            if "onboarding_completed" not in settings_columns:
+                connection.execute(
+                    "ALTER TABLE settings ADD COLUMN onboarding_completed INTEGER NOT NULL DEFAULT 0"
+                )
             table_sql = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'"
             ).fetchone()["sql"]
@@ -272,16 +280,18 @@ class EventStore:
             "alarm_threshold": row["alarm_threshold"],
             "sound_enabled": bool(row["sound_enabled"]),
             "refresh_seconds": row["refresh_seconds"],
+            "onboarding_completed": bool(row["onboarding_completed"]),
         }
 
     def update_settings(self, values: dict[str, object]) -> dict[str, object]:
         with self.connect() as connection:
             connection.execute(
                 """UPDATE settings SET panel_name = ?, location_name = ?, alarm_threshold = ?,
-                sound_enabled = ?, refresh_seconds = ? WHERE id = 1""",
+                sound_enabled = ?, refresh_seconds = ?, onboarding_completed = ? WHERE id = 1""",
                 (
                     values["panel_name"], values["location_name"], values["alarm_threshold"],
                     int(bool(values["sound_enabled"])), values["refresh_seconds"],
+                    int(bool(values["onboarding_completed"])),
                 ),
             )
         return self.settings()

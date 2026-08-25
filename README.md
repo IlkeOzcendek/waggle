@@ -74,6 +74,9 @@ and the latest device/model and report integration activity in user-friendly lan
 Panel name, location, critical alarm threshold, alert sound, and refresh interval can be
 changed from the authenticated **Ayarlar** page and are stored persistently in SQLite.
 
+First-time users receive a four-step quick-start guide. Completion is stored in SQLite,
+and the guide can be reopened later from the settings page.
+
 ## Run the panel locally
 
 ```bash

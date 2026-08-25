@@ -147,6 +147,20 @@ section + section { margin-top: 44px; }
 .switch-row input { width: 21px; height: 21px; accent-color: var(--teal); }
 .settings-actions { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; }
 .settings-actions p { color: var(--teal); font-size: 13px; }
+.onboarding-dialog { width: min(780px, calc(100% - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: auto; border: 0; border-radius: 22px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 90px rgb(0 0 0 / 28%); }
+.onboarding-dialog::backdrop { background: rgb(35 42 53 / 62%); backdrop-filter: blur(3px); }
+.onboarding-head { display: flex; justify-content: space-between; gap: 24px; padding: 28px 30px 22px; border-bottom: 1px solid #ded9cd; }
+.onboarding-head h2 { margin-top: 5px; font-size: 31px; }
+.onboarding-head > div > p:last-child { margin-top: 7px; color: var(--muted); }
+#close-guide { align-self: flex-start; width: 38px; height: 38px; padding: 0; font-size: 24px; }
+.onboarding-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 24px 30px; }
+.onboarding-steps article { display: grid; grid-template-columns: auto 1fr; gap: 13px; padding: 18px; border: 1px solid #ded9cd; border-radius: 15px; background: white; }
+.onboarding-steps article > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--amber-soft); color: #8f3d0c; font-weight: 900; }
+.onboarding-steps h3 { margin: 3px 0 8px; font-size: 16px; }
+.onboarding-steps p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.onboarding-steps p strong { color: var(--ink); }
+.onboarding-actions { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px 30px 28px; }
+.onboarding-actions small { max-width: 390px; color: var(--muted); }
 .table-wrap { overflow: hidden; border: 1px solid #ded9cd; border-radius: 18px; background: white; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 15px 18px; text-align: left; border-bottom: 1px solid #eeeae1; }
@@ -176,4 +190,4 @@ select { margin-left: 5px; padding: 8px 27px 8px 10px; border: 1px solid #d5cfc3
 .header-actions > span { font-size: .9rem; font-weight: 700; }
 .header-actions button { border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; padding: 8px 13px; cursor: pointer; }
 .hive-name small { display: block; margin-top: 3px; color: #777165; font-size: .7rem; font-weight: 700; letter-spacing: .08em; }
-@media (max-width: 750px) { .status-components { grid-template-columns: 1fr; } .settings-form article { grid-template-columns: 1fr; } .settings-actions { align-items: flex-start; flex-direction: column; gap: 12px; } }
+@media (max-width: 750px) { .status-components, .onboarding-steps { grid-template-columns: 1fr; } .settings-form article { grid-template-columns: 1fr; } .settings-actions, .onboarding-actions { align-items: flex-start; flex-direction: column; gap: 12px; } .onboarding-head, .onboarding-steps, .onboarding-actions { padding-left: 20px; padding-right: 20px; } }

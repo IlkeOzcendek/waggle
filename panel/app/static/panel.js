@@ -14,6 +14,7 @@ let soundEnabled = true;
 let alarmThreshold = .85;
 let refreshSeconds = 5;
 let refreshTimer = null;
+let currentSettings = null;
 let lastCriticalId = null;
 let latestEvents = [];
 let latestReports = [];
@@ -159,6 +160,7 @@ function showView(viewName) {
 }
 
 function applySettings(settings) {
+  currentSettings = settings;
   soundEnabled = settings.sound_enabled;
   alarmThreshold = settings.alarm_threshold;
   refreshSeconds = settings.refresh_seconds;
@@ -175,10 +177,32 @@ function applySettings(settings) {
   refreshTimer = setInterval(refresh, refreshSeconds * 1000);
 }
 
-async function loadSettings() {
+async function loadSettings(showGuide = false) {
   const response = await fetch("/api/settings");
   if (!response.ok) return;
-  applySettings(await response.json());
+  const settings = await response.json();
+  applySettings(settings);
+  if (showGuide && !settings.onboarding_completed) openGuide();
+}
+
+function openGuide() {
+  const dialog = document.querySelector("#onboarding-dialog");
+  if (!dialog.open) dialog.showModal();
+}
+
+function closeGuide() {
+  document.querySelector("#onboarding-dialog").close();
+}
+
+async function completeGuide() {
+  if (!currentSettings) return;
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({...currentSettings, onboarding_completed: true}),
+  });
+  if (response.ok) applySettings(await response.json());
+  closeGuide();
 }
 
 async function saveSettings(event) {
@@ -198,6 +222,7 @@ async function saveSettings(event) {
         alarm_threshold: Number(form.alarm_threshold.value) / 100,
         sound_enabled: form.sound_enabled.checked,
         refresh_seconds: Number(form.refresh_seconds.value),
+        onboarding_completed: currentSettings?.onboarding_completed || false,
       }),
     });
     if (!response.ok) throw new Error("Ayarlar kaydedilemedi");
@@ -470,7 +495,10 @@ document.querySelector("#settings-threshold").addEventListener("input", event =>
   document.querySelector("#threshold-value").textContent = `%${event.target.value}`;
 });
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
-loadSettings().finally(() => {
+document.querySelector("#reopen-guide").addEventListener("click", openGuide);
+document.querySelector("#close-guide").addEventListener("click", closeGuide);
+document.querySelector("#complete-guide").addEventListener("click", completeGuide);
+loadSettings(true).finally(() => {
   if (!refreshTimer) refreshTimer = setInterval(refresh, refreshSeconds * 1000);
   refresh(); refreshContext(); refreshAlarms();
 });

@@ -104,3 +104,4 @@ class AppSettings(BaseModel):
     alarm_threshold: float = Field(ge=0.5, le=0.99)
     sound_enabled: bool = True
     refresh_seconds: int = Field(ge=2, le=60)
+    onboarding_completed: bool = False
