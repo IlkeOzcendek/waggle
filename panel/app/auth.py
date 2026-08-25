@@ -6,6 +6,13 @@ import hmac
 import os
 import secrets
 import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 COOKIE_NAME = "waggle_session"
@@ -16,7 +23,29 @@ _DEVICE_KEY = os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo")
 _PASSWORD = os.getenv("WAGGLE_ADMIN_PASSWORD", "waggle-demo")
 _PASSWORD_SALT = os.getenv("WAGGLE_PASSWORD_SALT", "waggle-local-panel").encode()
 _PASSWORD_HASH = hashlib.pbkdf2_hmac("sha256", _PASSWORD.encode(), _PASSWORD_SALT, 210_000)
-_SESSION_SECRET = os.getenv("WAGGLE_SESSION_SECRET", secrets.token_urlsafe(32)).encode()
+_SESSION_SECRET_VALUE = os.getenv("WAGGLE_SESSION_SECRET")
+_SESSION_SECRET = (_SESSION_SECRET_VALUE or secrets.token_urlsafe(32)).encode()
+ENVIRONMENT = os.getenv("WAGGLE_ENV", "development").lower()
+
+
+def security_warnings() -> list[str]:
+    warnings = []
+    if _PASSWORD == "waggle-demo":
+        warnings.append("Varsayılan yönetici parolası kullanılıyor")
+    if _DEVICE_KEY == "waggle-device-demo":
+        warnings.append("Varsayılan cihaz anahtarı kullanılıyor")
+    if not _SESSION_SECRET_VALUE:
+        warnings.append("Kalıcı oturum anahtarı yapılandırılmadı")
+    if os.getenv("WAGGLE_SECURE_COOKIE", "0") != "1":
+        warnings.append("Güvenli HTTPS çerezi devre dışı")
+    return warnings
+
+
+def validate_security_config() -> list[str]:
+    warnings = security_warnings()
+    if ENVIRONMENT == "production" and warnings:
+        raise RuntimeError("Production güvenlik yapılandırması eksik: " + "; ".join(warnings))
+    return warnings
 
 
 def verify_credentials(username: str, password: str) -> bool:

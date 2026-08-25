@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
-from panel.app.auth import create_session, read_session, verify_credentials, verify_device_key
+from panel.app import auth
+from panel.app.auth import create_session, read_session, security_warnings, validate_security_config, verify_credentials, verify_device_key
 
 
 class AuthenticationTest(unittest.TestCase):
@@ -22,6 +24,18 @@ class AuthenticationTest(unittest.TestCase):
         self.assertTrue(verify_device_key("waggle-device-demo"))
         self.assertFalse(verify_device_key("wrong-device-key"))
         self.assertFalse(verify_device_key(None))
+
+    def test_development_defaults_produce_security_warnings(self):
+        warnings = security_warnings()
+        self.assertTrue(any("parolası" in warning for warning in warnings))
+        self.assertTrue(any("cihaz anahtarı" in warning for warning in warnings))
+
+    def test_production_rejects_security_warnings(self):
+        with patch.object(auth, "ENVIRONMENT", "production"), patch.object(
+            auth, "security_warnings", return_value=["Eksik güvenlik ayarı"]
+        ):
+            with self.assertRaises(RuntimeError):
+                validate_security_config()
 
 
 if __name__ == "__main__":

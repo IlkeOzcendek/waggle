@@ -4,6 +4,7 @@
 
 - Pull the latest approved `main` branch.
 - Confirm Python dependencies are installed in `.venv`.
+- Copy `.env.example` to `.env` and configure secrets outside local demos.
 - Close any process already using port 8000.
 - Keep the device key private outside local demos.
 - Run `python -m unittest discover -s panel/tests -v`.

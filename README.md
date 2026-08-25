@@ -74,6 +74,8 @@ Built for the Microsoft AI Innovators Summer Program 2026 · Aug 3–31, 2026
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and replace the example secrets.
 uvicorn panel.app.main:app --reload
 ```
 
@@ -92,8 +94,10 @@ Open <http://127.0.0.1:8000> and sign in with the local demo account:
 - Username: `admin`
 - Password: `waggle-demo`
 
-Set `WAGGLE_ADMIN_USERNAME`, `WAGGLE_ADMIN_PASSWORD`, and `WAGGLE_SESSION_SECRET`
-before a real deployment. Sessions expire after eight hours by default.
+Configuration is loaded automatically from `.env`, which is ignored by Git.
+Set `WAGGLE_ENV=production` for a real deployment; startup then fails if the
+default password, device key, session secret, or secure cookie setting is unsafe.
+Sessions expire after eight hours by default.
 
 The demo interface presents the technical hive identifiers with friendly names:
 `H1` is Bahçe Kovanı, `H2` is Orman Kovanı, and `H3` is Deneme Kovanı. The

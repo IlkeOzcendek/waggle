@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from .auth import (
     read_session,
     verify_credentials,
     verify_device_key,
+    validate_security_config,
 )
 from pydantic import BaseModel
 
@@ -32,10 +34,13 @@ WEATHER_LAT = float(os.getenv("WAGGLE_LAT", "41.0082"))
 WEATHER_LON = float(os.getenv("WAGGLE_LON", "28.9784"))
 WEATHER_LOCATION = os.getenv("WAGGLE_LOCATION", "Demo Kovanları")
 weather_cache: tuple[datetime, WeatherState] | None = None
+logger = logging.getLogger("waggle")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    for warning in validate_security_config():
+        logger.warning("Güvenlik uyarısı: %s", warning)
     store.initialize()
     yield
 
