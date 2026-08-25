@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import requests
 
 from .database import EventStore
-from .models import DashboardState, HiveEvent, HiveEventIn, Report, ReportIn, WeatherState
+from .models import DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, Report, ReportIn, WeatherState
 from .auth import (
     ADMIN_USERNAME,
     COOKIE_NAME,
@@ -111,6 +111,8 @@ def health() -> dict[str, str]:
 
 @app.post("/api/events", response_model=HiveEvent, status_code=201)
 def create_event(event: HiveEventIn) -> HiveEvent:
+    if not store.has_hive(event.hive_id):
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
     try:
         return store.add(event)
     except Exception as exc:
@@ -133,6 +135,16 @@ def acknowledge_event(event_id: int) -> HiveEvent:
 @app.get("/api/dashboard", response_model=DashboardState)
 def dashboard() -> DashboardState:
     return DashboardState(hives=store.summaries(), events=store.recent(30))
+
+
+@app.get("/api/hives", response_model=list[Hive])
+def list_hives() -> list[Hive]:
+    return store.hives()
+
+
+@app.post("/api/hives", response_model=Hive, status_code=201)
+def create_hive(hive: HiveCreate) -> Hive:
+    return store.add_hive(hive)
 
 
 @app.post("/api/reports", response_model=Report, status_code=201)

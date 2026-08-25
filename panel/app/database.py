@@ -6,13 +6,20 @@ from pathlib import Path
 
 import json
 
-from .models import HiveEvent, HiveEventIn, HiveSummary, Report, ReportIn
+from .models import Hive, HiveCreate, HiveEvent, HiveEventIn, HiveSummary, Report, ReportIn
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS hives (
+    hive_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    location TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hive_id TEXT NOT NULL CHECK (hive_id IN ('H1', 'H2', 'H3')),
+    hive_id TEXT NOT NULL,
     timestamp TEXT NOT NULL,
     event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
@@ -48,6 +55,72 @@ class EventStore:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(events)")}
             if "acknowledged_at" not in columns:
                 connection.execute("ALTER TABLE events ADD COLUMN acknowledged_at TEXT")
+            table_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'"
+            ).fetchone()["sql"]
+            if "hive_id IN" in table_sql:
+                self._migrate_events_table(connection)
+            now = datetime.now(timezone.utc).isoformat()
+            defaults = [
+                ("H1", "Bahçe Kovanı", "Bahçe", now),
+                ("H2", "Orman Kovanı", "Orman", now),
+                ("H3", "Deneme Kovanı", "Test alanı", now),
+            ]
+            connection.executemany(
+                "INSERT OR IGNORE INTO hives (hive_id, name, location, created_at) VALUES (?, ?, ?, ?)",
+                defaults,
+            )
+
+    @staticmethod
+    def _migrate_events_table(connection: sqlite3.Connection) -> None:
+        connection.execute("DROP INDEX IF EXISTS idx_events_hive_time")
+        connection.execute("ALTER TABLE events RENAME TO events_legacy")
+        connection.execute(
+            """CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hive_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
+                confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+                alindi TEXT NOT NULL,
+                acknowledged_at TEXT
+            )"""
+        )
+        connection.execute(
+            """INSERT INTO events
+            (id, hive_id, timestamp, event, confidence, alindi, acknowledged_at)
+            SELECT id, hive_id, timestamp, event, confidence, alindi, acknowledged_at
+            FROM events_legacy"""
+        )
+        connection.execute("DROP TABLE events_legacy")
+        connection.execute(
+            "CREATE INDEX idx_events_hive_time ON events(hive_id, timestamp DESC)"
+        )
+
+    def hives(self) -> list[Hive]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM hives WHERE active = 1 ORDER BY CAST(SUBSTR(hive_id, 2) AS INTEGER)"
+            ).fetchall()
+        return [self._hive(row) for row in rows]
+
+    def add_hive(self, hive: HiveCreate) -> Hive:
+        created_at = datetime.now(timezone.utc)
+        with self.connect() as connection:
+            rows = connection.execute("SELECT hive_id FROM hives").fetchall()
+            numbers = [int(row["hive_id"][1:]) for row in rows if row["hive_id"][1:].isdigit()]
+            hive_id = f"H{max(numbers, default=0) + 1}"
+            connection.execute(
+                "INSERT INTO hives (hive_id, name, location, active, created_at) VALUES (?, ?, ?, 1, ?)",
+                (hive_id, hive.name.strip(), hive.location.strip() if hive.location else None, created_at.isoformat()),
+            )
+        return Hive(hive_id=hive_id, name=hive.name.strip(), location=hive.location.strip() if hive.location else None, active=True, created_at=created_at)
+
+    def has_hive(self, hive_id: str) -> bool:
+        with self.connect() as connection:
+            return connection.execute(
+                "SELECT 1 FROM hives WHERE hive_id = ? AND active = 1", (hive_id,)
+            ).fetchone() is not None
 
     def add(self, event: HiveEventIn) -> HiveEvent:
         received_at = datetime.now(timezone.utc)
@@ -82,10 +155,14 @@ class EventStore:
             row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return self._event(row) if row else None
 
-    def summaries(self, hive_ids: tuple[str, ...] = ("H1", "H2", "H3")) -> list[HiveSummary]:
+    def summaries(self) -> list[HiveSummary]:
         summaries: list[HiveSummary] = []
         with self.connect() as connection:
-            for hive_id in hive_ids:
+            hives = connection.execute(
+                "SELECT * FROM hives WHERE active = 1 ORDER BY CAST(SUBSTR(hive_id, 2) AS INTEGER)"
+            ).fetchall()
+            for hive in hives:
+                hive_id = hive["hive_id"]
                 row = connection.execute(
                     "SELECT * FROM events WHERE hive_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1",
                     (hive_id,),
@@ -94,6 +171,8 @@ class EventStore:
                     summaries.append(
                         HiveSummary(
                             hive_id=hive_id,
+                            name=hive["name"],
+                            location=hive["location"],
                             durum="veri_yok",
                             last_event=None,
                             confidence=None,
@@ -110,6 +189,8 @@ class EventStore:
                 summaries.append(
                     HiveSummary(
                         hive_id=hive_id,
+                        name=hive["name"],
+                        location=hive["location"],
                         durum=status,
                         last_event=event.event,
                         confidence=event.confidence,
@@ -154,6 +235,16 @@ class EventStore:
             )
             for row in rows
         ]
+
+    @staticmethod
+    def _hive(row: sqlite3.Row) -> Hive:
+        return Hive(
+            hive_id=row["hive_id"],
+            name=row["name"],
+            location=row["location"],
+            active=bool(row["active"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
 
     @staticmethod
     def _event(row: sqlite3.Row) -> HiveEvent:

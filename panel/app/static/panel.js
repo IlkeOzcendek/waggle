@@ -6,6 +6,8 @@ const soundButton = document.querySelector("#sound-toggle");
 const demoButton = document.querySelector("#demo-button");
 const eventFilter = document.querySelector("#event-filter");
 const reportSelect = document.querySelector("#report-select");
+const hiveForm = document.querySelector("#hive-form");
+const managedHives = document.querySelector("#managed-hives");
 let soundEnabled = true;
 let lastCriticalId = null;
 let latestEvents = [];
@@ -19,6 +21,12 @@ const hiveNames = { H1: "Bahçe Kovanı", H2: "Orman Kovanı", H3: "Deneme Kovan
 
 function hiveLabel(hiveId) {
   return `${hiveNames[hiveId] || "Kovan"} (${hiveId})`;
+}
+
+function hiveColor(hiveId) {
+  const colors = ["#15803d", "#b7791f", "#c62828", "#2563eb", "#7c3aed", "#0f766e"];
+  const number = Number(hiveId.slice(1)) || 1;
+  return colors[(number - 1) % colors.length];
 }
 
 function explainHiveIds(text) {
@@ -54,6 +62,7 @@ function beep() {
 function render(data) {
   latestEvents = data.events;
   latestHives = data.hives;
+  data.hives.forEach(hive => { hiveNames[hive.hive_id] = hive.name; });
   const counts = data.hives.reduce((result, hive) => {
     result[hive.durum] = (result[hive.durum] || 0) + 1;
     return result;
@@ -64,7 +73,7 @@ function render(data) {
   document.querySelector("#summary-critical").textContent = counts.kritik || 0;
   hivesEl.innerHTML = data.hives.map(hive => `
     <article class="hive-card" style="--status:${colors[hive.durum]}">
-      <div class="hive-head"><span class="hive-name">${hiveNames[hive.hive_id] || "Kovan"}<small>${hive.hive_id}</small></span><span class="badge">${labels[hive.durum]}</span></div>
+      <div class="hive-head"><span class="hive-name">${escapeHtml(hive.name)}<small>${hive.hive_id}${hive.location ? ` · ${escapeHtml(hive.location)}` : ""}</small></span><span class="badge">${labels[hive.durum]}</span></div>
       <div class="confidence">${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</div>
       <div class="confidence-label">model güveni</div>
       <div class="event-time">${dateLabel(hive.timestamp)}</div>
@@ -72,6 +81,7 @@ function render(data) {
     </article>`).join("");
 
   if (selectedHiveId) renderHiveDetail();
+  renderManagedHives();
   updatedEl.textContent = `Son güncelleme ${dateLabel(data.generated_at)}`;
 
   const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= .85);
@@ -97,12 +107,11 @@ function renderEvents() {
 
 function renderChart(events) {
   const svg = document.querySelector("#confidence-chart");
-  const colors = { H1: "#15803d", H2: "#b7791f", H3: "#c62828" };
   const grid = [0, 25, 50, 75, 100].map(value => {
     const y = 195 - value * 1.7;
     return `<line class="grid-line" x1="45" y1="${y}" x2="885" y2="${y}"/><text class="axis-label" x="5" y="${y + 4}">%${value}</text>`;
   }).join("");
-  const hiveIds = selectedHiveId ? [selectedHiveId] : Object.keys(colors);
+  const hiveIds = selectedHiveId ? [selectedHiveId] : latestHives.map(hive => hive.hive_id);
   const series = hiveIds.map(hiveId => {
     const values = events.filter(event => event.hive_id === hiveId).slice(0, 12).reverse();
     if (!values.length) return "";
@@ -110,7 +119,8 @@ function renderChart(events) {
       const x = values.length === 1 ? 465 : 55 + index * (820 / (values.length - 1));
       return { x, y: 195 - event.confidence * 170 };
     });
-    return `<polyline class="chart-line" stroke="${colors[hiveId]}" points="${points.map(point => `${point.x},${point.y}`).join(" ")}"/>${points.map(point => `<circle class="chart-point" fill="${colors[hiveId]}" cx="${point.x}" cy="${point.y}" r="6"/>`).join("")}`;
+    const color = hiveColor(hiveId);
+    return `<polyline class="chart-line" stroke="${color}" points="${points.map(point => `${point.x},${point.y}`).join(" ")}"/>${points.map(point => `<circle class="chart-point" fill="${color}" cx="${point.x}" cy="${point.y}" r="6"/>`).join("")}`;
   }).join("");
   svg.innerHTML = grid + (series || '<text class="chart-empty" x="450" y="110">Grafik için olay bekleniyor</text>');
 }
@@ -126,7 +136,7 @@ function renderHiveDetail() {
     <article><span>Güncel durum</span><strong style="color:${colors[hive.durum]}">${labels[hive.durum]}</strong></article>
     <article><span>Model güveni</span><strong>${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</strong></article>
     <article><span>Son sinyal</span><strong>${dateLabel(hive.timestamp)}</strong></article>`;
-  document.querySelector("#chart-legend").innerHTML = `<span class="${hive.hive_id.toLowerCase()}-dot">${hiveLabel(hive.hive_id)}</span>`;
+  document.querySelector("#chart-legend").innerHTML = `<span style="--dot:${hiveColor(hive.hive_id)}">${hiveLabel(hive.hive_id)}</span>`;
   renderChart(latestEvents);
   renderEvents();
 }
@@ -141,6 +151,38 @@ function openHiveDetail(hiveId) {
   selectedHiveId = hiveId;
   showView("detail");
   renderHiveDetail();
+}
+
+function renderManagedHives() {
+  managedHives.innerHTML = latestHives.length ? latestHives.map(hive => `
+    <article class="managed-hive-row">
+      <div><strong>${escapeHtml(hive.name)}</strong><span>${hive.location ? escapeHtml(hive.location) : "Konum belirtilmedi"}</span></div>
+      <code>${hive.hive_id}</code>
+    </article>`).join("") : '<p>Henüz kovan eklenmedi.</p>';
+}
+
+async function createHive(event) {
+  event.preventDefault();
+  const message = document.querySelector("#hive-form-message");
+  const submit = hiveForm.querySelector('[type="submit"]');
+  submit.disabled = true;
+  message.textContent = "";
+  try {
+    const response = await fetch("/api/hives", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name: hiveForm.name.value.trim(), location: hiveForm.location.value.trim() || null}),
+    });
+    if (!response.ok) throw new Error("Kovan kaydedilemedi");
+    const hive = await response.json();
+    message.textContent = `${hive.name} ${hive.hive_id} kimliğiyle eklendi.`;
+    hiveForm.reset();
+    await refresh();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 async function startDemo() {
@@ -223,6 +265,16 @@ document.querySelectorAll(".nav-button").forEach(button => button.addEventListen
   selectedHiveId = null;
   showView(button.dataset.view);
 }));
+document.querySelector("#show-hive-form").addEventListener("click", () => {
+  hiveForm.hidden = false;
+  document.querySelector("#hive-name").focus();
+});
+document.querySelector("#cancel-hive-form").addEventListener("click", () => {
+  hiveForm.hidden = true;
+  hiveForm.reset();
+  document.querySelector("#hive-form-message").textContent = "";
+});
+hiveForm.addEventListener("submit", createHive);
 refresh(); refreshContext();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);

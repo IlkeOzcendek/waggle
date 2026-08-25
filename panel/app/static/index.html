@@ -18,6 +18,7 @@
 
   <nav class="main-nav" aria-label="Ana menü">
     <button class="nav-button active" data-view="overview" type="button">Genel Bakış</button>
+    <button class="nav-button" data-view="hives" type="button">Kovanlarım</button>
     <button class="nav-button" data-view="reports" type="button">Raporlar</button>
   </nav>
 
@@ -84,9 +85,23 @@
         </article>
       </section>
     </div>
+
+    <div id="hives-view" class="app-view" hidden>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">KOVAN YÖNETİMİ</p><h2>Kovanlarım</h2></div><button id="show-hive-form" class="primary-button" type="button">+ Yeni kovan ekle</button></div>
+        <p class="management-intro">Kovan adlarını ve konumlarını buradan yönetin. Sensör kimliği sistem tarafından otomatik oluşturulur.</p>
+        <form id="hive-form" class="hive-form" hidden>
+          <div><label for="hive-name">Kovan adı</label><input id="hive-name" name="name" placeholder="Örn. Arka Bahçe Kovanı" required minlength="2" maxlength="80"></div>
+          <div><label for="hive-location">Konum</label><input id="hive-location" name="location" placeholder="Örn. Ankara / Gölbaşı" maxlength="160"></div>
+          <div class="form-actions"><button id="cancel-hive-form" type="button">Vazgeç</button><button class="primary-button" type="submit">Kovanı kaydet</button></div>
+          <p id="hive-form-message" class="form-message" role="status"></p>
+        </form>
+        <div id="managed-hives" class="managed-hive-list"></div>
+      </section>
+    </div>
   </main>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=10"></script>
+  <script src="/static/panel.js?v=11"></script>
 </body>
 </html>

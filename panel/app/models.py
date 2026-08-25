@@ -10,7 +10,7 @@ EventType = Literal["healthy", "queenless_suspected", "uncertain"]
 
 
 class HiveEventIn(BaseModel):
-    hive_id: str = Field(pattern=r"^H[1-3]$", examples=["H3"])
+    hive_id: str = Field(pattern=r"^H[1-9][0-9]{0,2}$", examples=["H3"])
     timestamp: datetime
     event: EventType
     confidence: float = Field(ge=0, le=1)
@@ -24,6 +24,8 @@ class HiveEvent(HiveEventIn):
 
 class HiveSummary(BaseModel):
     hive_id: str
+    name: str
+    location: str | None = None
     durum: Literal["normal", "uyari", "kritik", "veri_yok"]
     last_event: EventType | None
     confidence: float | None
@@ -36,6 +38,17 @@ class DashboardState(BaseModel):
     events: list[HiveEvent]
 
 
+class HiveCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    location: str | None = Field(default=None, max_length=160)
+
+
+class Hive(HiveCreate):
+    hive_id: str
+    active: bool = True
+    created_at: datetime
+
+
 class ReportIn(BaseModel):
     period_start: datetime
     period_end: datetime
@@ -46,8 +59,8 @@ class ReportIn(BaseModel):
     @field_validator("hive_ids")
     @classmethod
     def validate_hive_ids(cls, value: list[str]) -> list[str]:
-        if not value or any(hive_id not in {"H1", "H2", "H3"} for hive_id in value):
-            raise ValueError("hive_ids yalnızca H1, H2 ve H3 içerebilir")
+        if not value or any(not hive_id.startswith("H") for hive_id in value):
+            raise ValueError("Geçerli kovan kimlikleri kullanın")
         return list(dict.fromkeys(value))
 
 
