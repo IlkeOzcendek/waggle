@@ -91,6 +91,8 @@ python tools/fake_report.py
 
 Weather defaults to the demo hive location. Override it with `WAGGLE_LAT`, `WAGGLE_LON`, and `WAGGLE_LOCATION` before starting the server.
 
+The dashboard also includes a one-click demo scenario, client-side hive/event filters, and a dependency-free SVG confidence chart. The demo endpoint is intended for local presentation use only.
+
 The API documentation is available at <http://127.0.0.1:8000/docs>. Run the panel tests with:
 
 ```bash

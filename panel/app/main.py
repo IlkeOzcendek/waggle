@@ -20,6 +20,7 @@ store = EventStore(DB_PATH)
 WEATHER_LAT = float(os.getenv("WAGGLE_LAT", "41.0082"))
 WEATHER_LON = float(os.getenv("WAGGLE_LON", "28.9784"))
 WEATHER_LOCATION = os.getenv("WAGGLE_LOCATION", "Demo Kovanları")
+weather_cache: tuple[datetime, WeatherState] | None = None
 
 
 @asynccontextmanager
@@ -74,6 +75,10 @@ def list_reports(limit: int = Query(default=10, ge=1, le=100)) -> list[Report]:
 
 @app.get("/api/weather", response_model=WeatherState)
 def weather() -> WeatherState:
+    global weather_cache
+    now = datetime.now()
+    if weather_cache and (now - weather_cache[0]).total_seconds() < 600:
+        return weather_cache[1]
     try:
         response = requests.get(
             "https://api.open-meteo.com/v1/forecast",
@@ -87,7 +92,7 @@ def weather() -> WeatherState:
         )
         response.raise_for_status()
         current = response.json()["current"]
-        return WeatherState(
+        state = WeatherState(
             location=WEATHER_LOCATION,
             temperature_c=current["temperature_2m"],
             humidity_percent=current["relative_humidity_2m"],
@@ -95,5 +100,18 @@ def weather() -> WeatherState:
             weather_code=current["weather_code"],
             observed_at=datetime.fromisoformat(current["time"]),
         )
+        weather_cache = (now, state)
+        return state
     except (requests.RequestException, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Hava durumu şu anda alınamıyor") from exc
+
+
+@app.post("/api/demo", response_model=list[HiveEvent], status_code=201)
+def demo_scenario() -> list[HiveEvent]:
+    timestamp = datetime.now().astimezone().replace(microsecond=0)
+    scenario = [
+        HiveEventIn(hive_id="H1", timestamp=timestamp, event="healthy", confidence=0.93),
+        HiveEventIn(hive_id="H2", timestamp=timestamp, event="uncertain", confidence=0.68),
+        HiveEventIn(hive_id="H3", timestamp=timestamp, event="queenless_suspected", confidence=0.91),
+    ]
+    return [store.add(event) for event in scenario]
