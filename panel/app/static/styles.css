@@ -72,3 +72,4 @@ select { margin-left: 5px; padding: 8px 27px 8px 10px; border: 1px solid #d5cfc3
 .header-actions { display: flex; align-items: center; gap: 14px; }
 .header-actions > span { font-size: .9rem; font-weight: 700; }
 .header-actions button { border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; padding: 8px 13px; cursor: pointer; }
+.hive-name small { display: block; margin-top: 3px; color: #777165; font-size: .7rem; font-weight: 700; letter-spacing: .08em; }

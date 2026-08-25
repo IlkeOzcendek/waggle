@@ -40,7 +40,7 @@
     </section>
 
     <section class="chart-section">
-      <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Model güveni</h2></div><div class="chart-legend"><span class="h1-dot">H1</span><span class="h2-dot">H2</span><span class="h3-dot">H3</span></div></div>
+      <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Model güveni</h2></div><div class="chart-legend"><span class="h1-dot">Bahçe (H1)</span><span class="h2-dot">Orman (H2)</span><span class="h3-dot">Deneme (H3)</span></div></div>
       <div class="chart-card"><svg id="confidence-chart" viewBox="0 0 900 220" role="img" aria-label="Kovan güven değerleri grafiği"></svg></div>
     </section>
 
@@ -48,7 +48,7 @@
       <div class="section-title">
         <div><p class="eyebrow">TELEMETRİ</p><h2>Olay akışı</h2></div>
         <div class="feed-actions">
-          <label>Kovan <select id="hive-filter"><option value="all">Tümü</option><option>H1</option><option>H2</option><option>H3</option></select></label>
+          <label>Kovan <select id="hive-filter"><option value="all">Tüm kovanlar</option><option value="H1">Bahçe Kovanı (H1)</option><option value="H2">Orman Kovanı (H2)</option><option value="H3">Deneme Kovanı (H3)</option></select></label>
           <label>Olay <select id="event-filter"><option value="all">Tümü</option><option value="healthy">Normal</option><option value="uncertain">Belirsiz</option><option value="queenless_suspected">Kritik</option></select></label>
           <button id="sound-toggle" type="button">Sesli alarm: açık</button>
         </div>
@@ -63,6 +63,6 @@
   </main>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=8"></script>
+  <script src="/static/panel.js?v=9"></script>
 </body>
 </html>

@@ -14,6 +14,18 @@ let latestReports = [];
 
 const labels = { normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" };
 const colors = { normal: "#15803d", uyari: "#b7791f", kritik: "#c62828", veri_yok: "#6d7685" };
+const hiveNames = { H1: "Bahçe Kovanı", H2: "Orman Kovanı", H3: "Deneme Kovanı" };
+
+function hiveLabel(hiveId) {
+  return `${hiveNames[hiveId] || "Kovan"} (${hiveId})`;
+}
+
+function explainHiveIds(text) {
+  return Object.keys(hiveNames).reduce(
+    (result, hiveId) => result.replace(new RegExp(`\\b${hiveId}\\b`, "g"), hiveLabel(hiveId)),
+    text
+  );
+}
 
 function dateLabel(value) {
   if (!value) return "Henüz sinyal yok";
@@ -42,7 +54,7 @@ function render(data) {
   latestEvents = data.events;
   hivesEl.innerHTML = data.hives.map(hive => `
     <article class="hive-card" style="--status:${colors[hive.durum]}">
-      <div class="hive-head"><span class="hive-name">${hive.hive_id}</span><span class="badge">${labels[hive.durum]}</span></div>
+      <div class="hive-head"><span class="hive-name">${hiveNames[hive.hive_id] || "Kovan"}<small>${hive.hive_id}</small></span><span class="badge">${labels[hive.durum]}</span></div>
       <div class="confidence">${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</div>
       <div class="confidence-label">model güveni</div>
       <div class="event-time">${dateLabel(hive.timestamp)}</div>
@@ -55,7 +67,7 @@ function render(data) {
   const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= .85);
   if (critical && critical.id !== lastCriticalId) {
     lastCriticalId = critical.id;
-    alertEl.textContent = `${critical.hive_id}: Ana arı kaybı şüphesi (${Math.round(critical.confidence * 100)}%)`;
+    alertEl.textContent = `${hiveLabel(critical.hive_id)}: Ana arı kaybı şüphesi (${Math.round(critical.confidence * 100)}%)`;
     alertEl.classList.add("show"); beep();
     setTimeout(() => alertEl.classList.remove("show"), 5500);
   }
@@ -67,7 +79,7 @@ function renderEvents() {
     (eventFilter.value === "all" || event.event === eventFilter.value)
   );
   eventsEl.innerHTML = filtered.length ? filtered.map(event => `
-    <tr><td>${dateLabel(event.timestamp)}</td><td>${event.hive_id}</td>
+    <tr><td>${dateLabel(event.timestamp)}</td><td>${hiveLabel(event.hive_id)}</td>
     <td class="${event.event === "queenless_suspected" ? "event-critical" : ""}">${event.event === "queenless_suspected" ? "Ana arı kaybı şüphesi" : event.event === "uncertain" ? "Belirsiz" : "Normal"}</td>
     <td>${Math.round(event.confidence * 100)}%</td>
     <td>${event.event !== "queenless_suspected" ? "—" : event.acknowledged_at ? '<span class="acknowledged">Kontrol edildi</span>' : `<button class="ack-button" data-ack="${event.id}" type="button">Kontrol edildi olarak işaretle</button>`}</td></tr>`).join("") : '<tr><td colspan="5">Filtreyle eşleşen olay yok.</td></tr>';
@@ -121,8 +133,8 @@ function renderSelectedReport() {
   const report = latestReports.find(item => String(item.id) === reportSelect.value) || latestReports[0];
   if (!report) return;
   document.querySelector("#report-period").textContent = `${dateLabel(report.period_start)} – ${dateLabel(report.period_end)}`;
-  document.querySelector("#report-summary").textContent = report.summary;
-  document.querySelector("#report-actions").innerHTML = report.recommendations.map(item => `<li>${escapeHtml(item)}</li>`).join("");
+  document.querySelector("#report-summary").textContent = explainHiveIds(report.summary);
+  document.querySelector("#report-actions").innerHTML = report.recommendations.map(item => `<li>${escapeHtml(explainHiveIds(item))}</li>`).join("");
 }
 
 async function acknowledgeEvent(eventId) {

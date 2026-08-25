@@ -85,6 +85,10 @@ Open <http://127.0.0.1:8000> and sign in with the local demo account:
 Set `WAGGLE_ADMIN_USERNAME`, `WAGGLE_ADMIN_PASSWORD`, and `WAGGLE_SESSION_SECRET`
 before a real deployment. Sessions expire after eight hours by default.
 
+The demo interface presents the technical hive identifiers with friendly names:
+`H1` is Bahçe Kovanı, `H2` is Orman Kovanı, and `H3` is Deneme Kovanı. The
+identifiers remain unchanged in the API contract used by edge devices.
+
 Python 3.10+ is recommended. Python 3.9 is supported through the conditional `eval_type_backport` dependency in `requirements.txt`.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:
