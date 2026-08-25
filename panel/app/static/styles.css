@@ -69,3 +69,6 @@ select { margin-left: 5px; padding: 8px 27px 8px 10px; border: 1px solid #d5cfc3
 .alert { position: fixed; right: 24px; bottom: 24px; max-width: 390px; padding: 17px 20px; border-radius: 14px; background: #991b1b; color: white; box-shadow: 0 12px 40px rgb(0 0 0 / 25%); transform: translateY(140%); transition: transform .25s ease; }
 .alert.show { transform: translateY(0); }
 @media (max-width: 750px) { .hive-grid, .context-grid { grid-template-columns: 1fr; } header, .section-title { align-items: flex-start; gap: 24px; } .section-title, .live-actions, .feed-actions { flex-direction: column; } .feed-actions { align-items: flex-start; } .connection { margin-top: 16px; } th:nth-child(1), td:nth-child(1) { display: none; } }
+.header-actions { display: flex; align-items: center; gap: 14px; }
+.header-actions > span { font-size: .9rem; font-weight: 700; }
+.header-actions button { border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; padding: 8px 13px; cursor: pointer; }

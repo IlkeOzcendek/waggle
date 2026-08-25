@@ -164,3 +164,14 @@ eventsEl.addEventListener("click", event => {
 refresh(); refreshContext();
 setInterval(refresh, 2500);
 setInterval(refreshContext, 300000);
+const logoutButton = document.querySelector("#logout-button");
+const currentUser = document.querySelector("#current-user");
+
+fetch("/api/me").then((response) => response.json()).then((user) => {
+  currentUser.textContent = user.username;
+});
+
+logoutButton.addEventListener("click", async () => {
+  await fetch("/api/logout", {method: "POST"});
+  window.location.replace("/login");
+});

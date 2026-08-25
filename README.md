@@ -77,6 +77,14 @@ pip install -r requirements.txt
 uvicorn panel.app.main:app --reload
 ```
 
+Open <http://127.0.0.1:8000> and sign in with the local demo account:
+
+- Username: `admin`
+- Password: `waggle-demo`
+
+Set `WAGGLE_ADMIN_USERNAME`, `WAGGLE_ADMIN_PASSWORD`, and `WAGGLE_SESSION_SECRET`
+before a real deployment. Sessions expire after eight hours by default.
+
 Python 3.10+ is recommended. Python 3.9 is supported through the conditional `eval_type_backport` dependency in `requirements.txt`.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:

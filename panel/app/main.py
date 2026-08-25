@@ -5,13 +5,22 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import requests
 
 from .database import EventStore
 from .models import DashboardState, HiveEvent, HiveEventIn, Report, ReportIn, WeatherState
+from .auth import (
+    ADMIN_USERNAME,
+    COOKIE_NAME,
+    SESSION_SECONDS,
+    create_session,
+    read_session,
+    verify_credentials,
+)
+from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -31,6 +40,63 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Waggle API", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+PUBLIC_PATHS = {"/login", "/api/login", "/api/health"}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if path in PUBLIC_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+    username = read_session(request.cookies.get(COOKIE_NAME))
+    if username:
+        request.state.username = username
+        return await call_next(request)
+    if path.startswith("/api/"):
+        return JSONResponse({"detail": "Oturum açmanız gerekiyor"}, status_code=401)
+    return RedirectResponse("/login", status_code=303)
+
+
+@app.get("/login", include_in_schema=False)
+def login_page(request: Request) -> Response:
+    if read_session(request.cookies.get(COOKIE_NAME)):
+        return RedirectResponse("/", status_code=303)
+    return FileResponse(BASE_DIR / "static" / "login.html")
+
+
+@app.post("/api/login")
+def login(credentials: LoginRequest) -> Response:
+    if not verify_credentials(credentials.username, credentials.password):
+        raise HTTPException(status_code=401, detail="Kullanıcı adı veya parola hatalı")
+    response = JSONResponse({"username": credentials.username})
+    response.set_cookie(
+        COOKIE_NAME,
+        create_session(credentials.username),
+        max_age=SESSION_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("WAGGLE_SECURE_COOKIE", "0") == "1",
+    )
+    return response
+
+
+@app.post("/api/logout", status_code=204)
+def logout() -> Response:
+    response = Response(status_code=204)
+    response.delete_cookie(COOKIE_NAME)
+    return response
+
+
+@app.get("/api/me")
+def current_user(request: Request) -> dict[str, str]:
+    return {"username": getattr(request.state, "username", ADMIN_USERNAME)}
 
 
 @app.get("/", include_in_schema=False)
