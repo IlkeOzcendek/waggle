@@ -90,6 +90,8 @@ def main() -> int:
         print(f"Panel: {base_url}")
         print("Kullanıcı adı: admin")
         print("Parola: waggle-demo")
+        print("Sunum akışı: PRESENTATION_GUIDE.md")
+        print("Kontrol listesi: DEMO_CHECKLIST.md")
         print("Durdurmak için Control+C\n")
         process.wait()
     except KeyboardInterrupt:

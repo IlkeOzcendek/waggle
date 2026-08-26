@@ -96,7 +96,8 @@ python tools/run_demo.py
 ```
 
 See [`DEMO_CHECKLIST.md`](DEMO_CHECKLIST.md) for the presentation flow and
-recovery steps.
+recovery steps. [`PRESENTATION_GUIDE.md`](PRESENTATION_GUIDE.md) contains a
+four-minute Turkish narration, closing message, and answers to likely questions.
 
 Open <http://127.0.0.1:8000> and sign in with the local demo account:
 
