@@ -208,3 +208,8 @@ The API documentation is available at <http://127.0.0.1:8000/docs>. Run the pane
 ```bash
 python -m unittest discover -s panel/tests -v
 ```
+
+Pull requests automatically run the panel suite on Python 3.9 and 3.11, compile
+all Python modules, and validate both JavaScript entry points. The PR template
+also checks the frozen event contract, secret handling, UI verification, and
+recovery notes before review.
