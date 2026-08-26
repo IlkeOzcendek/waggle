@@ -105,3 +105,4 @@ class AppSettings(BaseModel):
     sound_enabled: bool = True
     refresh_seconds: int = Field(ge=2, le=60)
     onboarding_completed: bool = False
+    weather_enabled: bool = False

@@ -168,7 +168,11 @@ To add a demo weekly report, run:
 python tools/fake_report.py
 ```
 
-Weather defaults to the demo hive location. Override it with `WAGGLE_LAT`, `WAGGLE_LON`, and `WAGGLE_LOCATION` before starting the server.
+The core product is offline-first. Online weather is disabled by default and no
+coordinates are sent to a third party unless a user explicitly enables it in
+**Ayarlar**. When enabled, configured `WAGGLE_LAT` and `WAGGLE_LON` coordinates
+are sent to Open-Meteo and cached for ten minutes. `WAGGLE_LOCATION` controls
+the user-facing label; weather failure never blocks hive monitoring.
 
 The dashboard also includes a one-click demo scenario, client-side hive/event filters, and a dependency-free SVG confidence chart. The demo endpoint is intended for local presentation use only.
 

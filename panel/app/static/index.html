@@ -163,6 +163,10 @@
             <label for="settings-refresh">Yenileme sıklığı<select id="settings-refresh" name="refresh_seconds"><option value="2">2 saniye</option><option value="5">5 saniye</option><option value="10">10 saniye</option><option value="30">30 saniye</option><option value="60">60 saniye</option></select></label>
           </article>
           <article>
+            <div><h3>İsteğe bağlı çevrimiçi özellikler</h3><p>Waggle’ın temel kovan izleme işlevleri internet olmadan çalışır.</p></div>
+            <label class="switch-row" for="settings-weather"><span><strong>Çevrimiçi hava durumu</strong><small>Açıldığında yapılandırılmış koordinatlar Open-Meteo servisine gönderilir.</small></span><input id="settings-weather" name="weather_enabled" type="checkbox"></label>
+          </article>
+          <article>
             <div><h3>Yardım ve başlangıç rehberi</h3><p>Waggle’ın temel kullanım adımlarını yeniden görüntüleyin.</p></div>
             <button id="reopen-guide" type="button">Başlangıç rehberini aç</button>
           </article>
@@ -184,6 +188,6 @@
   </dialog>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=17"></script>
+  <script src="/static/panel.js?v=18"></script>
 </body>
 </html>

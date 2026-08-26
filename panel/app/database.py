@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS settings (
     alarm_threshold REAL NOT NULL,
     sound_enabled INTEGER NOT NULL,
     refresh_seconds INTEGER NOT NULL,
-    onboarding_completed INTEGER NOT NULL DEFAULT 0
+    onboarding_completed INTEGER NOT NULL DEFAULT 0,
+    weather_enabled INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -77,6 +78,10 @@ class EventStore:
             if "onboarding_completed" not in settings_columns:
                 connection.execute(
                     "ALTER TABLE settings ADD COLUMN onboarding_completed INTEGER NOT NULL DEFAULT 0"
+                )
+            if "weather_enabled" not in settings_columns:
+                connection.execute(
+                    "ALTER TABLE settings ADD COLUMN weather_enabled INTEGER NOT NULL DEFAULT 0"
                 )
             table_sql = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'"
@@ -281,17 +286,20 @@ class EventStore:
             "sound_enabled": bool(row["sound_enabled"]),
             "refresh_seconds": row["refresh_seconds"],
             "onboarding_completed": bool(row["onboarding_completed"]),
+            "weather_enabled": bool(row["weather_enabled"]),
         }
 
     def update_settings(self, values: dict[str, object]) -> dict[str, object]:
         with self.connect() as connection:
             connection.execute(
                 """UPDATE settings SET panel_name = ?, location_name = ?, alarm_threshold = ?,
-                sound_enabled = ?, refresh_seconds = ?, onboarding_completed = ? WHERE id = 1""",
+                sound_enabled = ?, refresh_seconds = ?, onboarding_completed = ?,
+                weather_enabled = ? WHERE id = 1""",
                 (
                     values["panel_name"], values["location_name"], values["alarm_threshold"],
                     int(bool(values["sound_enabled"])), values["refresh_seconds"],
                     int(bool(values["onboarding_completed"])),
+                    int(bool(values["weather_enabled"])),
                 ),
             )
         return self.settings()

@@ -172,6 +172,7 @@ function applySettings(settings) {
   document.querySelector("#settings-threshold").value = Math.round(settings.alarm_threshold * 100);
   document.querySelector("#threshold-value").textContent = `%${Math.round(settings.alarm_threshold * 100)}`;
   document.querySelector("#settings-sound").checked = settings.sound_enabled;
+  document.querySelector("#settings-weather").checked = settings.weather_enabled;
   document.querySelector("#settings-refresh").value = String(settings.refresh_seconds);
   clearInterval(refreshTimer);
   refreshTimer = setInterval(refresh, refreshSeconds * 1000);
@@ -223,6 +224,7 @@ async function saveSettings(event) {
         sound_enabled: form.sound_enabled.checked,
         refresh_seconds: Number(form.refresh_seconds.value),
         onboarding_completed: currentSettings?.onboarding_completed || false,
+        weather_enabled: form.weather_enabled.checked,
       }),
     });
     if (!response.ok) throw new Error("Ayarlar kaydedilemedi");
@@ -367,6 +369,12 @@ function renderWeather(weather) {
   document.querySelector("#weather-details").innerHTML = `<span>Nem %${weather.humidity_percent}</span><span>Rüzgâr ${Math.round(weather.wind_kmh)} km/sa</span>`;
 }
 
+function renderWeatherDisabled() {
+  document.querySelector("#weather-location").textContent = "Çevrimiçi hava durumu kapalı";
+  document.querySelector("#weather-temp").textContent = "—";
+  document.querySelector("#weather-details").innerHTML = "<span>Temel kovan izleme internet olmadan çalışmaya devam eder.</span>";
+}
+
 function renderReports(reports) {
   latestReports = reports;
   reportSelect.innerHTML = reports.length ? reports.map((report, index) => `<option value="${report.id}">${index === 0 ? "Son rapor" : dateLabel(report.period_end)}</option>`).join("") : '<option value="">Rapor yok</option>';
@@ -438,10 +446,12 @@ async function refresh() {
 }
 
 async function refreshContext() {
+  const weatherRequest = currentSettings?.weather_enabled ? fetch("/api/weather") : null;
   const [weatherResponse, reportsResponse] = await Promise.all([
-    fetch("/api/weather"), fetch("/api/reports?limit=10")
+    weatherRequest, fetch("/api/reports?limit=10")
   ]);
-  if (weatherResponse.ok) renderWeather(await weatherResponse.json());
+  if (weatherResponse?.ok) renderWeather(await weatherResponse.json());
+  else if (!currentSettings?.weather_enabled) renderWeatherDisabled();
   if (reportsResponse.ok) renderReports(await reportsResponse.json());
 }
 

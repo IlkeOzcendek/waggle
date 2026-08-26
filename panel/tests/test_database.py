@@ -124,6 +124,7 @@ class EventStoreTest(unittest.TestCase):
         defaults = self.store.settings()
         self.assertEqual(defaults["panel_name"], "Waggle")
         self.assertEqual(defaults["alarm_threshold"], .85)
+        self.assertFalse(defaults["weather_enabled"])
         saved = self.store.update_settings({
             "panel_name": "Arılığım",
             "location_name": "Ankara",
@@ -131,10 +132,12 @@ class EventStoreTest(unittest.TestCase):
             "sound_enabled": False,
             "refresh_seconds": 10,
             "onboarding_completed": True,
+            "weather_enabled": True,
         })
         self.assertEqual(saved["panel_name"], "Arılığım")
         self.assertFalse(saved["sound_enabled"])
         self.assertTrue(saved["onboarding_completed"])
+        self.assertTrue(saved["weather_enabled"])
         self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), event="queenless_suspected", confidence=.90))
         self.assertEqual(self.store.summaries(saved["alarm_threshold"])[0].durum, "uyari")
         self.assertEqual(self.store.summaries(.89)[0].durum, "kritik")

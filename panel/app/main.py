@@ -271,6 +271,12 @@ def backup_database() -> FileResponse:
 @app.get("/api/weather", response_model=WeatherState)
 def weather() -> WeatherState:
     global weather_cache
+    settings = AppSettings(**store.settings())
+    if not settings.weather_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Çevrimiçi hava durumu Ayarlar bölümünden etkinleştirilmedi",
+        )
     now = datetime.now()
     if weather_cache and (now - weather_cache[0]).total_seconds() < 600:
         return weather_cache[1]
@@ -287,7 +293,6 @@ def weather() -> WeatherState:
         )
         response.raise_for_status()
         current = response.json()["current"]
-        settings = AppSettings(**store.settings())
         state = WeatherState(
             location=settings.location_name or WEATHER_LOCATION,
             temperature_c=current["temperature_2m"],
