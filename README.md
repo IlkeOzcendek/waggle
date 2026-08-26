@@ -74,6 +74,11 @@ and the latest device/model and report integration activity in user-friendly lan
 Panel name, location, critical alarm threshold, alert sound, and refresh interval can be
 changed from the authenticated **Ayarlar** page and are stored persistently in SQLite.
 
+The system status screen marks device/model activity as delayed when no new event
+arrives for 15 minutes, and weekly reports as stale after eight days. These
+thresholds can be changed with `WAGGLE_DEVICE_STALE_SECONDS` and
+`WAGGLE_REPORT_STALE_SECONDS`.
+
 First-time users receive a four-step quick-start guide. Completion is stored in SQLite,
 and the guide can be reopened later from the settings page.
 

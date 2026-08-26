@@ -4,7 +4,7 @@ import os
 import logging
 import tempfile
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -39,6 +39,25 @@ WEATHER_LON = float(os.getenv("WAGGLE_LON", "28.9784"))
 WEATHER_LOCATION = os.getenv("WAGGLE_LOCATION", "Demo Kovanları")
 weather_cache: tuple[datetime, WeatherState] | None = None
 logger = logging.getLogger("waggle")
+DEVICE_STALE_SECONDS = int(os.getenv("WAGGLE_DEVICE_STALE_SECONDS", "900"))
+REPORT_STALE_SECONDS = int(os.getenv("WAGGLE_REPORT_STALE_SECONDS", "691200"))
+
+
+def integration_freshness(
+    last_seen: datetime | None,
+    stale_after_seconds: int,
+    now: datetime | None = None,
+) -> str:
+    if last_seen is None:
+        return "waiting"
+    if stale_after_seconds < 1:
+        raise ValueError("Güncellik eşiği pozitif olmalıdır")
+    observed = last_seen if last_seen.tzinfo else last_seen.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    age_seconds = (current - observed).total_seconds()
+    return "warning" if age_seconds > stale_after_seconds else "ok"
 
 
 @asynccontextmanager
@@ -186,11 +205,23 @@ def system_status() -> SystemStatus:
     last_event = diagnostics["last_event_at"]
     last_report = diagnostics["last_report_at"]
     database_ok = diagnostics["integrity"] == "ok"
+    device_status = integration_freshness(last_event, DEVICE_STALE_SECONDS)
+    report_status = integration_freshness(last_report, REPORT_STALE_SECONDS)
+    device_messages = {
+        "ok": ("Canlı veri alınıyor", "Cihaz veya model sonuçları güvenli bağlantı üzerinden panele ulaşıyor."),
+        "waiting": ("İlk veri bekleniyor", "Ilke'nin modeli ya da bir kovan cihazı ilk olayı gönderdiğinde burada bağlantı zamanı görünecek."),
+        "warning": ("Cihaz verisi gecikiyor", "Son olay beklenen süreden eski. Kovan cihazını, modeli ve yerel ağ bağlantısını kontrol edin."),
+    }
+    report_messages = {
+        "ok": ("Rapor entegrasyonu çalışıyor", "Üretilen değerlendirme raporları panele kaydediliyor."),
+        "waiting": ("İlk rapor bekleniyor", "İlk haftalık değerlendirme gönderildiğinde burada son rapor zamanı görünecek."),
+        "warning": ("Rapor güncel değil", "Son haftalık değerlendirme beklenen süreden eski. Rapor üretim akışını kontrol edin."),
+    }
     components = [
         ComponentStatus(key="panel", name="Waggle paneli", status="ok", summary="Panel çalışıyor", detail="Kullanıcı arayüzü ve API istekleri yanıt veriyor."),
         ComponentStatus(key="database", name="Veri kayıt sistemi", status="ok" if database_ok else "warning", summary="Veritabanı sağlam" if database_ok else "Veritabanını kontrol edin", detail=f'{counts["hives"]} kovan, {counts["events"]} olay ve {counts["reports"]} rapor kayıtlı.'),
-        ComponentStatus(key="device", name="Kovan cihazları ve yapay zekâ modeli", status="ok" if last_event else "waiting", summary="Canlı veri alınıyor" if last_event else "İlk veri bekleniyor", detail="Cihaz veya model sonuçları güvenli bağlantı üzerinden panele ulaşıyor." if last_event else "Ilke'nin modeli ya da bir kovan cihazı ilk olayı gönderdiğinde burada bağlantı zamanı görünecek.", last_seen_at=last_event),
-        ComponentStatus(key="reports", name="Haftalık yapay zekâ raporları", status="ok" if last_report else "waiting", summary="Rapor entegrasyonu çalışıyor" if last_report else "İlk rapor bekleniyor", detail="Üretilen değerlendirme raporları panele kaydediliyor." if last_report else "İlk haftalık değerlendirme gönderildiğinde burada son rapor zamanı görünecek.", last_seen_at=last_report),
+        ComponentStatus(key="device", name="Kovan cihazları ve yapay zekâ modeli", status=device_status, summary=device_messages[device_status][0], detail=device_messages[device_status][1], last_seen_at=last_event),
+        ComponentStatus(key="reports", name="Haftalık yapay zekâ raporları", status=report_status, summary=report_messages[report_status][0], detail=report_messages[report_status][1], last_seen_at=last_report),
     ]
     return SystemStatus(overall="ok" if all(item.status == "ok" for item in components) else "attention", components=components)
 
