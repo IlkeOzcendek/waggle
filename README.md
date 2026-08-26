@@ -213,3 +213,11 @@ Pull requests automatically run the panel suite on Python 3.9 and 3.11, compile
 all Python modules, and validate both JavaScript entry points. The PR template
 also checks the frozen event contract, secret handling, UI verification, and
 recovery notes before review.
+
+The panel supports keyboard navigation with a skip link, visible focus states,
+focus transfer between views, current-page navigation announcements, labeled
+tables and restore controls, live system status announcements, and reduced-motion
+preferences.
+
+Session tokens are also required to use their canonical URL-safe encoding, so
+alternate textual encodings of the same signed bytes are rejected.

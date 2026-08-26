@@ -7,26 +7,27 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Ana içeriğe geç</a>
   <header>
     <div>
       <p class="eyebrow">EDGE AI KOVAN İZLEME</p>
       <h1 id="panel-name">Waggle</h1>
       <p class="tagline">Kovanları dinleyen yapay zekâ</p>
     </div>
-    <div class="header-actions"><div class="connection"><span></span> Sistem bağlı</div><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
+    <div class="header-actions"><div class="connection" role="status" aria-live="polite"><span aria-hidden="true"></span><span class="connection-label">Sistem bağlı</span></div><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
   </header>
 
   <nav class="main-nav" aria-label="Ana menü">
-    <button class="nav-button active" data-view="overview" type="button">Genel Bakış</button>
-    <button class="nav-button" data-view="hives" type="button">Kovanlarım</button>
-    <button class="nav-button" data-view="alarms" type="button">Alarmlar <span id="nav-alarm-count" class="nav-count" hidden>0</span></button>
-    <button class="nav-button" data-view="reports" type="button">Raporlar</button>
-    <button class="nav-button" data-view="exports" type="button">Dışa Aktar</button>
-    <button class="nav-button" data-view="status" type="button">Sistem Durumu</button>
-    <button class="nav-button" data-view="settings" type="button">Ayarlar</button>
+    <button class="nav-button active" data-view="overview" type="button" aria-current="page">Genel Bakış</button>
+    <button class="nav-button" data-view="hives" type="button" aria-current="false">Kovanlarım</button>
+    <button class="nav-button" data-view="alarms" type="button" aria-current="false">Alarmlar <span id="nav-alarm-count" class="nav-count" hidden>0</span></button>
+    <button class="nav-button" data-view="reports" type="button" aria-current="false">Raporlar</button>
+    <button class="nav-button" data-view="exports" type="button" aria-current="false">Dışa Aktar</button>
+    <button class="nav-button" data-view="status" type="button" aria-current="false">Sistem Durumu</button>
+    <button class="nav-button" data-view="settings" type="button" aria-current="false">Ayarlar</button>
   </nav>
 
-  <main>
+  <main id="main-content" tabindex="-1">
     <div id="overview-view" class="app-view">
       <section>
         <div class="section-title">
@@ -72,6 +73,7 @@
         </div>
         <div class="table-wrap">
           <table>
+            <caption class="visually-hidden">Seçili kovanın son yapay zekâ olayları</caption>
             <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th><th>İşlem</th></tr></thead>
             <tbody id="events"><tr><td colspan="5">Henüz olay yok.</td></tr></tbody>
           </table>
@@ -126,7 +128,7 @@
           <article><div><span class="export-icon">!</span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
           <article><div><span class="export-icon">≡</span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
           <article class="backup-card"><div><span class="export-icon">↓</span><h3>Tam veritabanı yedeği</h3><p>Kovanlar, olaylar, alarm durumları ve raporları içeren tutarlı SQLite yedeğini indirin. Bu dosyayı güvenli bir yerde saklayın.</p></div><div><a href="/api/backup/database" download>SQLite yedeğini indir</a></div></article>
-          <article class="backup-card restore-card"><div><span class="export-icon">↑</span><h3>Yedekten geri yükle</h3><p>Geçerli bir Waggle SQLite yedeği seçin. Mevcut veriler değiştirilmeden hemen önce sunucuda otomatik bir kurtarma kopyası oluşturulur.</p></div><div class="restore-actions"><input id="restore-file" type="file" accept=".db,application/vnd.sqlite3,application/octet-stream"><button id="restore-backup" type="button">Yedeği geri yükle</button></div><p id="restore-message" class="form-message" role="status"></p></article>
+          <article class="backup-card restore-card"><div><span class="export-icon">↑</span><h3>Yedekten geri yükle</h3><p>Geçerli bir Waggle SQLite yedeği seçin. Mevcut veriler değiştirilmeden hemen önce sunucuda otomatik bir kurtarma kopyası oluşturulur.</p></div><div class="restore-actions"><label for="restore-file">Yedek dosyası</label><input id="restore-file" type="file" accept=".db,application/vnd.sqlite3,application/octet-stream"><button id="restore-backup" type="button">Yedeği geri yükle</button></div><p id="restore-message" class="form-message" role="status"></p></article>
         </div>
       </section>
     </div>
@@ -189,6 +191,6 @@
   </dialog>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=19"></script>
+  <script src="/static/panel.js?v=20"></script>
 </body>
 </html>

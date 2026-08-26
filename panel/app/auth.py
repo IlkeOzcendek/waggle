@@ -125,6 +125,12 @@ def read_session(token: str | None) -> str | None:
         signature = base64.urlsafe_b64decode(
             encoded_signature + "=" * (-len(encoded_signature) % 4)
         )
+        canonical_payload = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+        canonical_signature = base64.urlsafe_b64encode(signature).decode().rstrip("=")
+        if not hmac.compare_digest(encoded_payload, canonical_payload) or not hmac.compare_digest(
+            encoded_signature, canonical_signature
+        ):
+            return None
         expected = hmac.new(_SESSION_SECRET, payload, hashlib.sha256).digest()
         if not hmac.compare_digest(signature, expected):
             return None

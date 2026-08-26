@@ -185,10 +185,23 @@ function renderHiveDetail() {
   renderEvents();
 }
 
-function showView(viewName) {
-  document.querySelectorAll(".app-view").forEach(view => { view.hidden = view.id !== `${viewName}-view`; });
-  document.querySelectorAll(".nav-button").forEach(button => button.classList.toggle("active", button.dataset.view === viewName));
-  window.scrollTo({top: 0, behavior: "smooth"});
+function showView(viewName, moveFocus = false) {
+  const activeView = document.querySelector(`#${viewName}-view`);
+  document.querySelectorAll(".app-view").forEach(view => { view.hidden = view !== activeView; });
+  document.querySelectorAll(".nav-button").forEach(button => {
+    const active = button.dataset.view === viewName;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({top: 0, behavior: reduceMotion ? "auto" : "smooth"});
+  if (moveFocus) {
+    const heading = activeView?.querySelector("h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({preventScroll: true});
+    }
+  }
   if (viewName === "hives") refreshManagedHives();
   if (viewName === "alarms") refreshAlarms();
   if (viewName === "status") refreshSystemStatus();
@@ -287,7 +300,7 @@ function renderSystemStatus(data) {
   document.querySelector("#status-updated").textContent = `Son kontrol: ${dateLabel(data.generated_at)}`;
   const header = document.querySelector(".connection");
   header.classList.toggle("attention", data.overall !== "ok");
-  header.lastChild.textContent = data.overall === "ok" ? " Sistem bağlı" : " Sistem çalışıyor";
+  header.querySelector(".connection-label").textContent = data.overall === "ok" ? "Sistem bağlı" : "Sistem çalışıyor";
 }
 
 async function refreshSystemStatus() {
@@ -306,7 +319,7 @@ async function refreshSystemStatus() {
 
 function openHiveDetail(hiveId) {
   selectedHiveId = hiveId;
-  showView("detail");
+  showView("detail", true);
   renderHiveDetail();
 }
 
@@ -509,11 +522,11 @@ hivesEl.addEventListener("click", event => {
 });
 document.querySelector("#back-overview").addEventListener("click", () => {
   selectedHiveId = null;
-  showView("overview");
+  showView("overview", true);
 });
 document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => {
   selectedHiveId = null;
-  showView(button.dataset.view);
+  showView(button.dataset.view, true);
 }));
 document.querySelector("#show-hive-form").addEventListener("click", () => {
   resetHiveForm();
