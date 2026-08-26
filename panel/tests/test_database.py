@@ -110,6 +110,45 @@ class EventStoreTest(unittest.TestCase):
         self.assertEqual(backup_store.recent()[0].hive_id, "H2")
         self.assertEqual(len(backup_store.hives(include_inactive=True)), 3)
 
+    def test_restore_replaces_data_with_valid_backup(self):
+        self.store.add(
+            HiveEventIn(
+                hive_id="H2",
+                timestamp=datetime.now(timezone.utc),
+                event="uncertain",
+                confidence=.67,
+            )
+        )
+        backup_path = Path(self.tempdir.name) / "restore.db"
+        self.store.backup_to(backup_path)
+        self.store.add(
+            HiveEventIn(
+                hive_id="H1",
+                timestamp=datetime.now(timezone.utc),
+                event="healthy",
+                confidence=.95,
+            )
+        )
+        self.store.restore_from(backup_path)
+        self.store.initialize()
+        self.assertEqual(len(self.store.recent()), 1)
+        self.assertEqual(self.store.recent()[0].hive_id, "H2")
+
+    def test_invalid_restore_is_rejected_without_changing_data(self):
+        self.store.add(
+            HiveEventIn(
+                hive_id="H1",
+                timestamp=datetime.now(timezone.utc),
+                event="healthy",
+                confidence=.95,
+            )
+        )
+        invalid_path = Path(self.tempdir.name) / "invalid.db"
+        invalid_path.write_text("not a sqlite database")
+        with self.assertRaises(ValueError):
+            self.store.restore_from(invalid_path)
+        self.assertEqual(len(self.store.recent()), 1)
+
     def test_diagnostics_report_counts_and_last_integration_activity(self):
         empty = self.store.diagnostics()
         self.assertEqual(empty["integrity"], "ok")

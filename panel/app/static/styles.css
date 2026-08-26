@@ -113,6 +113,10 @@ section + section { margin-top: 44px; }
 .export-grid .backup-card { grid-column: 1 / -1; min-height: 170px; border-color: #a7c7c2; background: #f4fbfa; }
 .backup-card .export-icon { background: #d7f2ee; color: var(--teal); }
 .export-grid .backup-card a:first-child { border-color: var(--teal); background: var(--teal); }
+.restore-card .restore-actions { align-items: center; flex-wrap: wrap; }
+.restore-card input { max-width: 100%; }
+.restore-card button { padding: 10px 14px; border: 0; border-radius: 999px; background: var(--teal); color: white; font-weight: 800; cursor: pointer; }
+.restore-card button:disabled { cursor: wait; opacity: .6; }
 .status-overview { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; padding: 20px; border: 1px solid #e4c77d; border-radius: 16px; background: #fffbeb; }
 .status-overview.ok { border-color: #9bd1ad; background: #f0fdf4; }
 .status-overview strong { font-size: 18px; }

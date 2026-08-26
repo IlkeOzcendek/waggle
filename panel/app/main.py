@@ -39,6 +39,7 @@ WEATHER_LON = float(os.getenv("WAGGLE_LON", "28.9784"))
 WEATHER_LOCATION = os.getenv("WAGGLE_LOCATION", "Demo Kovanları")
 weather_cache: tuple[datetime, WeatherState] | None = None
 logger = logging.getLogger("waggle")
+MAX_BACKUP_BYTES = int(os.getenv("WAGGLE_MAX_BACKUP_BYTES", str(100 * 1024 * 1024)))
 DEVICE_STALE_SECONDS = int(os.getenv("WAGGLE_DEVICE_STALE_SECONDS", "900"))
 REPORT_STALE_SECONDS = int(os.getenv("WAGGLE_REPORT_STALE_SECONDS", "691200"))
 
@@ -349,6 +350,45 @@ def backup_database() -> FileResponse:
         filename=f"waggle-backup-{timestamp}.db",
         background=BackgroundTask(backup_path.unlink, missing_ok=True),
     )
+
+
+@app.post("/api/backup/restore")
+async def restore_database(request: Request) -> dict[str, str]:
+    if request.headers.get("X-Waggle-Confirm-Restore") != "RESTORE":
+        raise HTTPException(status_code=400, detail="Geri yükleme onayı eksik")
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="Yedek dosyası izin verilen boyutu aşıyor")
+    contents = await request.body()
+    if not contents or len(contents) > MAX_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="Yedek dosyası boş veya çok büyük")
+
+    uploaded = tempfile.NamedTemporaryFile(prefix="waggle-upload-", suffix=".db", delete=False)
+    uploaded_path = Path(uploaded.name)
+    try:
+        uploaded.write(contents)
+        uploaded.close()
+        store.validate_backup(uploaded_path)
+        recovery_directory = DB_PATH.parent / "recovery"
+        recovery_directory.mkdir(parents=True, exist_ok=True)
+        recovery_path = recovery_directory / f"waggle-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+        store.backup_to(recovery_path)
+        try:
+            store.restore_from(uploaded_path)
+            store.initialize()
+        except Exception:
+            store.restore_from(recovery_path)
+            store.initialize()
+            raise
+        return {
+            "message": "Yedek başarıyla geri yüklendi",
+            "recovery_backup": recovery_path.name,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        uploaded.close()
+        uploaded_path.unlink(missing_ok=True)
 
 
 @app.get("/api/weather", response_model=WeatherState)

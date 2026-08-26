@@ -126,6 +126,7 @@
           <article><div><span class="export-icon">!</span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
           <article><div><span class="export-icon">≡</span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
           <article class="backup-card"><div><span class="export-icon">↓</span><h3>Tam veritabanı yedeği</h3><p>Kovanlar, olaylar, alarm durumları ve raporları içeren tutarlı SQLite yedeğini indirin. Bu dosyayı güvenli bir yerde saklayın.</p></div><div><a href="/api/backup/database" download>SQLite yedeğini indir</a></div></article>
+          <article class="backup-card restore-card"><div><span class="export-icon">↑</span><h3>Yedekten geri yükle</h3><p>Geçerli bir Waggle SQLite yedeği seçin. Mevcut veriler değiştirilmeden hemen önce sunucuda otomatik bir kurtarma kopyası oluşturulur.</p></div><div class="restore-actions"><input id="restore-file" type="file" accept=".db,application/vnd.sqlite3,application/octet-stream"><button id="restore-backup" type="button">Yedeği geri yükle</button></div><p id="restore-message" class="form-message" role="status"></p></article>
         </div>
       </section>
     </div>
@@ -188,6 +189,6 @@
   </dialog>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=18"></script>
+  <script src="/static/panel.js?v=19"></script>
 </body>
 </html>

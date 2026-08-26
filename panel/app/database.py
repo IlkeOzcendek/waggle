@@ -50,6 +50,13 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+REQUIRED_BACKUP_COLUMNS = {
+    "hives": {"hive_id", "name", "location", "active", "created_at"},
+    "events": {"id", "hive_id", "timestamp", "event", "confidence", "alindi"},
+    "reports": {"id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "created_at"},
+    "settings": {"id", "panel_name", "location_name", "alarm_threshold", "sound_enabled", "refresh_seconds"},
+}
+
 
 class EventStore:
     def __init__(self, path: str | Path) -> None:
@@ -181,6 +188,41 @@ class EventStore:
         finally:
             target.close()
         return destination_path
+
+    @staticmethod
+    def validate_backup(source: str | Path) -> None:
+        connection = sqlite3.connect(f"file:{Path(source).resolve()}?mode=ro", uri=True)
+        try:
+            integrity = connection.execute("PRAGMA quick_check").fetchone()[0]
+            if integrity != "ok":
+                raise ValueError("Yedek dosyasının SQLite bütünlük kontrolü başarısız")
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            for table, required_columns in REQUIRED_BACKUP_COLUMNS.items():
+                if table not in tables:
+                    raise ValueError(f"Yedekte gerekli {table} tablosu bulunamadı")
+                columns = {
+                    row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+                }
+                if not required_columns.issubset(columns):
+                    raise ValueError(f"Yedekteki {table} tablosu Waggle ile uyumlu değil")
+        except sqlite3.DatabaseError as exc:
+            raise ValueError("Dosya geçerli bir SQLite yedeği değil") from exc
+        finally:
+            connection.close()
+
+    def restore_from(self, source: str | Path) -> None:
+        self.validate_backup(source)
+        backup = sqlite3.connect(str(source))
+        try:
+            with self.connect() as destination:
+                backup.backup(destination)
+        finally:
+            backup.close()
 
     def diagnostics(self) -> dict[str, object]:
         """Return lightweight, read-only database and integration metrics."""

@@ -68,6 +68,42 @@ function beep() {
   oscillator.start(); oscillator.stop(context.currentTime + .45);
 }
 
+async function restoreBackup() {
+  const input = document.querySelector("#restore-file");
+  const message = document.querySelector("#restore-message");
+  const button = document.querySelector("#restore-backup");
+  const file = input.files[0];
+  if (!file) {
+    message.textContent = "Önce bir Waggle .db yedek dosyası seçin.";
+    return;
+  }
+  const confirmed = window.confirm(
+    "Bu işlem mevcut kovan, olay, alarm, rapor ve ayarları seçilen yedekle değiştirecek. Devam edilsin mi?"
+  );
+  if (!confirmed) return;
+  button.disabled = true;
+  message.textContent = "Yedek doğrulanıyor ve geri yükleniyor…";
+  try {
+    const response = await fetch("/api/backup/restore", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Waggle-Confirm-Restore": "RESTORE",
+      },
+      body: await file.arrayBuffer(),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "Yedek geri yüklenemedi");
+    message.textContent = `${body.message}. Kurtarma kopyası: ${body.recovery_backup}`;
+    input.value = "";
+    await Promise.all([refresh(), refreshContext(), refreshManagedHives(), refreshAlarms()]);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function render(data) {
   latestEvents = data.events;
   latestHives = data.hives;
@@ -501,6 +537,7 @@ alarmsList.addEventListener("click", event => {
   if (button) acknowledgeEvent(button.dataset.alarmAck);
 });
 document.querySelector("#refresh-status").addEventListener("click", refreshSystemStatus);
+document.querySelector("#restore-backup").addEventListener("click", restoreBackup);
 document.querySelector("#settings-threshold").addEventListener("input", event => {
   document.querySelector("#threshold-value").textContent = `%${event.target.value}`;
 });

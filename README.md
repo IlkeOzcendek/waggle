@@ -152,6 +152,11 @@ The same screen provides a live SQLite backup. It uses SQLite's online backup
 API, so events may continue arriving while a consistent `.db` file is created.
 The temporary server-side copy is removed after the download completes.
 
+Administrators can also restore a downloaded Waggle SQLite backup from the same
+screen. The server validates its integrity and required schema before replacing
+data, limits upload size to 100 MB by default, and creates a local recovery copy
+immediately before restoration. `WAGGLE_MAX_BACKUP_BYTES` changes the size limit.
+
 ## Send an event from an edge device
 
 Panel users authenticate with a browser session. Edge services use a separate
