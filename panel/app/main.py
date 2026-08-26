@@ -59,6 +59,47 @@ class LoginRequest(BaseModel):
 
 PUBLIC_PATHS = {"/login", "/api/login", "/api/health"}
 DEVICE_POST_PATHS = {"/api/events", "/api/reports"}
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def is_cross_site_request(origin: str | None, fetch_site: str | None, expected: str) -> bool:
+    """Reject browser mutations coming from another site without blocking devices."""
+    if fetch_site == "cross-site":
+        return True
+    return bool(origin) and origin.rstrip("/") != expected.rstrip("/")
+
+
+def security_headers(path: str) -> dict[str, str]:
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    }
+    if path not in {"/docs", "/redoc", "/openapi.json"}:
+        headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
+    if path.startswith("/api/") or path == "/login":
+        headers["Cache-Control"] = "no-store"
+    return headers
+
+
+@app.middleware("http")
+async def browser_security(request: Request, call_next):
+    expected_origin = f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+    if request.method in UNSAFE_METHODS and is_cross_site_request(
+        request.headers.get("origin"),
+        request.headers.get("sec-fetch-site"),
+        expected_origin,
+    ):
+        response = JSONResponse({"detail": "Çapraz site isteği reddedildi"}, status_code=403)
+    else:
+        response = await call_next(request)
+    for name, value in security_headers(request.url.path).items():
+        response.headers[name] = value
+    return response
 
 
 @app.middleware("http")

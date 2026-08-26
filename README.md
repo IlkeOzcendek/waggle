@@ -114,6 +114,11 @@ Set `WAGGLE_ENV=production` for a real deployment; startup then fails if the
 default password, device key, session secret, or secure cookie setting is unsafe.
 Sessions expire after eight hours by default.
 
+Browser-changing requests are restricted to the panel's own origin, while edge
+devices without browser headers continue to authenticate with `X-Device-Key`.
+The server also sends anti-framing, no-sniff, referrer, permissions, cache, and
+content security headers for the local panel.
+
 The demo interface presents the technical hive identifiers with friendly names:
 `H1` is Bahçe Kovanı, `H2` is Orman Kovanı, and `H3` is Deneme Kovanı. The
 identifiers remain unchanged in the API contract used by edge devices.
