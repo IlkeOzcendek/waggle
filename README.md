@@ -104,6 +104,11 @@ Open <http://127.0.0.1:8000> and sign in with the local demo account:
 - Username: `admin`
 - Password: `waggle-demo`
 
+To open the panel from an unused Android phone on the same trusted local network,
+run `python tools/run_demo.py --lan` and use the phone address printed in the
+terminal. This does not require internet access. See
+[`FIELD_PHONE.md`](FIELD_PHONE.md) for setup, troubleshooting, and security notes.
+
 Configuration is loaded automatically from `.env`, which is ignored by Git.
 Set `WAGGLE_ENV=production` for a real deployment; startup then fails if the
 default password, device key, session secret, or secure cookie setting is unsafe.
