@@ -5,7 +5,9 @@ import hashlib
 import hmac
 import os
 import secrets
+import threading
 import time
+from collections import defaultdict, deque
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,6 +28,52 @@ _PASSWORD_HASH = hashlib.pbkdf2_hmac("sha256", _PASSWORD.encode(), _PASSWORD_SAL
 _SESSION_SECRET_VALUE = os.getenv("WAGGLE_SESSION_SECRET")
 _SESSION_SECRET = (_SESSION_SECRET_VALUE or secrets.token_urlsafe(32)).encode()
 ENVIRONMENT = os.getenv("WAGGLE_ENV", "development").lower()
+LOGIN_MAX_ATTEMPTS = int(os.getenv("WAGGLE_LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_WINDOW_SECONDS = int(os.getenv("WAGGLE_LOGIN_WINDOW_SECONDS", "300"))
+
+
+class LoginAttemptGuard:
+    """Small in-memory limiter for repeated failed logins from one client."""
+
+    def __init__(self, max_attempts: int, window_seconds: int):
+        if max_attempts < 1 or window_seconds < 1:
+            raise ValueError("Giriş koruması değerleri pozitif olmalıdır")
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def _prune(self, identifier: str, now: float) -> deque[float]:
+        failures = self._failures[identifier]
+        cutoff = now - self.window_seconds
+        while failures and failures[0] <= cutoff:
+            failures.popleft()
+        if not failures:
+            self._failures.pop(identifier, None)
+            return deque()
+        return failures
+
+    def retry_after(self, identifier: str, now: float | None = None) -> int:
+        current = time.monotonic() if now is None else now
+        with self._lock:
+            failures = self._prune(identifier, current)
+            if len(failures) < self.max_attempts:
+                return 0
+            return max(1, int(failures[0] + self.window_seconds - current) + 1)
+
+    def record_failure(self, identifier: str, now: float | None = None) -> None:
+        current = time.monotonic() if now is None else now
+        with self._lock:
+            failures = self._prune(identifier, current)
+            failures.append(current)
+            self._failures[identifier] = failures
+
+    def reset(self, identifier: str) -> None:
+        with self._lock:
+            self._failures.pop(identifier, None)
+
+
+login_attempt_guard = LoginAttemptGuard(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS)
 
 
 def security_warnings() -> list[str]:

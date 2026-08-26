@@ -119,6 +119,10 @@ devices without browser headers continue to authenticate with `X-Device-Key`.
 The server also sends anti-framing, no-sniff, referrer, permissions, cache, and
 content security headers for the local panel.
 
+Repeated failed logins from the same client are limited to five attempts within
+five minutes by default. `WAGGLE_LOGIN_MAX_ATTEMPTS` and
+`WAGGLE_LOGIN_WINDOW_SECONDS` can adjust this local, in-memory protection.
+
 The demo interface presents the technical hive identifiers with friendly names:
 `H1` is Bahçe Kovanı, `H2` is Orman Kovanı, and `H3` is Deneme Kovanı. The
 identifiers remain unchanged in the API contract used by edge devices.

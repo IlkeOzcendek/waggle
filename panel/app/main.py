@@ -22,6 +22,7 @@ from .auth import (
     DEVICE_KEY_HEADER,
     SESSION_SECONDS,
     create_session,
+    login_attempt_guard,
     read_session,
     verify_credentials,
     verify_device_key,
@@ -131,9 +132,19 @@ def login_page(request: Request) -> Response:
 
 
 @app.post("/api/login")
-def login(credentials: LoginRequest) -> Response:
+def login(credentials: LoginRequest, request: Request) -> Response:
+    client_id = request.client.host if request.client else "unknown"
+    retry_after = login_attempt_guard.retry_after(client_id)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail="Çok fazla başarısız giriş denemesi. Lütfen kısa süre sonra tekrar deneyin.",
+            headers={"Retry-After": str(retry_after)},
+        )
     if not verify_credentials(credentials.username, credentials.password):
+        login_attempt_guard.record_failure(client_id)
         raise HTTPException(status_code=401, detail="Kullanıcı adı veya parola hatalı")
+    login_attempt_guard.reset(client_id)
     response = JSONResponse({"username": credentials.username})
     response.set_cookie(
         COOKIE_NAME,
