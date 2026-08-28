@@ -1,0 +1,62 @@
+{
+  "license": "CC BY 4.0",
+  "doi": "10.17632/j97khfj656.1",
+  "training_days": [
+    "2019-08-26",
+    "2019-08-27",
+    "2019-08-28",
+    "2019-08-29"
+  ],
+
+  "healthy_validation_day": "2019-08-30",
+  "queenless_test_day": "2019-09-02",
+  "selection_rule": "healthy specificity >= 0.95",
+  "selected_model": "isolation_forest",
+  "selected_result": {
+    "model": "isolation_forest",
+    "healthy_validation_specificity": 0.8833333333333333,
+    "queenless_test_sensitivity": 1.0,
+    "healthy_validation_alarm_fraction": 0.11666666666666667,
+    "queenless_test_alarm_fraction": 1.0,
+    "balanced_accuracy_proxy": 0.9416666666666667
+  },
+
+  "all_candidates": [
+
+    {
+      "model": "ocsvm_nu01",
+      "healthy_validation_specificity": 0.88,
+      "queenless_test_sensitivity": 1.0,
+      "healthy_validation_alarm_fraction": 0.12,
+      "queenless_test_alarm_fraction": 1.0,
+      "balanced_accuracy_proxy": 0.94
+    },
+
+    {
+      "model": "ocsvm_nu05",
+      "healthy_validation_specificity": 0.8422222222222222,
+      "queenless_test_sensitivity": 1.0,
+      "healthy_validation_alarm_fraction": 0.15777777777777777,
+      "queenless_test_alarm_fraction": 1.0,
+      "balanced_accuracy_proxy": 0.9211111111111111
+    },
+
+    {
+      "model": "ocsvm_nu10",
+      "healthy_validation_specificity": 0.72,
+      "queenless_test_sensitivity": 1.0,
+      "healthy_validation_alarm_fraction": 0.28,
+      "queenless_test_alarm_fraction": 1.0,
+      "balanced_accuracy_proxy": 0.86
+    },
+
+    {
+      "model": "isolation_forest",
+      "healthy_validation_specificity": 0.8833333333333333,
+      "queenless_test_sensitivity": 1.0,
+      "healthy_validation_alarm_fraction": 0.11666666666666667,
+      "queenless_test_alarm_fraction": 1.0,
+      "balanced_accuracy_proxy": 0.9416666666666667
+    }
+  ]
+}

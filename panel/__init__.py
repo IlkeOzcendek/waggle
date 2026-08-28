@@ -1,2 +1,1 @@
 """Waggle web panel package."""
-

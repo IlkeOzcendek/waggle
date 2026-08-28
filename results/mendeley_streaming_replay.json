@@ -1,0 +1,26 @@
+{
+  "window_seconds": 1,
+  "watch_rule": "5 consecutive anomalous windows",
+  "alarm_rule": "30 consecutive anomalous windows",
+  "replay": [
+    {
+      "date": "2019-08-30",
+      "label": "QR",
+      "windows": 900,
+      "anomaly_fraction": 0.11666666666666667,
+      "longest_anomaly_run": 7,
+      "watch_completion_window": 361,
+      "alarm_completion_window": null
+    },
+    {
+      "date": "2019-09-02",
+      "label": "QL",
+      "windows": 900,
+      "anomaly_fraction": 1.0,
+      "longest_anomaly_run": 900,
+      "watch_completion_window": 5,
+      "alarm_completion_window": 30
+    }
+  ],
+  "interpretation": "latency is measured from recording start, not queen-removal time"
+}

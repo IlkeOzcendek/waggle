@@ -6,14 +6,16 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-EventType = Literal["healthy", "queenless_suspected", "uncertain"]
+EventStatus = Literal["NORMAL", "WATCH", "ALARM"]
 
 
 class HiveEventIn(BaseModel):
-    hive_id: str = Field(pattern=r"^H[1-3]$", examples=["H3"])
+    hive_id: str = Field(pattern=r"^H[1-9][0-9]{0,2}$", examples=["H3"])
     timestamp: datetime
-    event: EventType
-    confidence: float = Field(ge=0, le=1)
+    status: EventStatus
+    anomaly_fraction: float = Field(ge=0, le=1)
+    consecutive_anomalies: int = Field(default=0, ge=0)
+    source_file: str | None = Field(default=None, max_length=255)
 
 
 class HiveEvent(HiveEventIn):
@@ -24,9 +26,11 @@ class HiveEvent(HiveEventIn):
 
 class HiveSummary(BaseModel):
     hive_id: str
+    name: str
+    location: str | None = None
     durum: Literal["normal", "uyari", "kritik", "veri_yok"]
-    last_event: EventType | None
-    confidence: float | None
+    last_status: EventStatus | None
+    anomaly_fraction: float | None
     timestamp: datetime | None
 
 
@@ -34,6 +38,22 @@ class DashboardState(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     hives: list[HiveSummary]
     events: list[HiveEvent]
+
+
+class HiveCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    location: str | None = Field(default=None, max_length=160)
+
+
+class HiveUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    location: str | None = Field(default=None, max_length=160)
+
+
+class Hive(HiveCreate):
+    hive_id: str
+    active: bool = True
+    created_at: datetime
 
 
 class ReportIn(BaseModel):
@@ -46,8 +66,8 @@ class ReportIn(BaseModel):
     @field_validator("hive_ids")
     @classmethod
     def validate_hive_ids(cls, value: list[str]) -> list[str]:
-        if not value or any(hive_id not in {"H1", "H2", "H3"} for hive_id in value):
-            raise ValueError("hive_ids yalnızca H1, H2 ve H3 içerebilir")
+        if not value or any(not hive_id.startswith("H") for hive_id in value):
+            raise ValueError("Geçerli kovan kimlikleri kullanın")
         return list(dict.fromkeys(value))
 
 
@@ -63,3 +83,28 @@ class WeatherState(BaseModel):
     wind_kmh: float
     weather_code: int
     observed_at: datetime
+
+
+class ComponentStatus(BaseModel):
+    key: str
+    name: str
+    status: Literal["ok", "waiting", "warning"]
+    summary: str
+    detail: str
+    last_seen_at: datetime | None = None
+
+
+class SystemStatus(BaseModel):
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    overall: Literal["ok", "attention"]
+    components: list[ComponentStatus]
+
+
+class AppSettings(BaseModel):
+    panel_name: str = Field(min_length=2, max_length=60)
+    location_name: str = Field(min_length=2, max_length=100)
+    alarm_threshold: float = Field(ge=0.5, le=0.99)
+    sound_enabled: bool = True
+    refresh_seconds: int = Field(ge=2, le=60)
+    onboarding_completed: bool = False
+    weather_enabled: bool = False

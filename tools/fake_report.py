@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import argparse
+import os
+from datetime import datetime, timedelta, timezone
 
 import requests
 
 
 def main() -> None:
-    period_end = datetime.now().replace(microsecond=0)
+    parser = argparse.ArgumentParser(description="Waggle paneline örnek haftalık rapor gönderir.")
+    parser.add_argument("--url", default="http://127.0.0.1:8000/api/reports")
+    parser.add_argument("--device-key", default=os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo"))
+    args = parser.parse_args()
+    period_end = datetime.now(timezone.utc).replace(microsecond=0)
     payload = {
         "period_start": (period_end - timedelta(days=7)).isoformat(),
         "period_end": period_end.isoformat(),
@@ -18,7 +24,12 @@ def main() -> None:
         ],
         "hive_ids": ["H1", "H2", "H3"],
     }
-    response = requests.post("http://127.0.0.1:8000/api/reports", json=payload, timeout=5)
+    response = requests.post(
+        args.url,
+        json=payload,
+        headers={"X-Device-Key": args.device_key},
+        timeout=5,
+    )
     response.raise_for_status()
     print(f"Rapor oluşturuldu: #{response.json()['id']}")
 
