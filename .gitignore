@@ -10,18 +10,37 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
+# Test and coverage cache
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Database
 *.db
 *.sqlite
 
 # Trained models, large files
 models/
-*.onnx
 *.pt
 *.pth
+
+# Runtime input and output
+inbox/
+events/
+monitor_state.json
+*_state.json
+
+# Hive-specific development models
+results/HIVE*_isolation.joblib
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
 
 # macOS
 .DS_Store
 
 # Editor
-.vscode/settings.json
+.vscode/
+.idea/
