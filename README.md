@@ -67,3 +67,38 @@ Public datasets that are no sensors required:
 
 
 Built for the Microsoft AI Innovators Summer Program 2026 · Aug 3–31, 2026
+
+## Run the panel locally
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn panel.app.main:app --reload
+```
+
+Python 3.10+ is recommended. Python 3.9 is supported through the conditional `eval_type_backport` dependency in `requirements.txt`.
+
+Open <http://127.0.0.1:8000>. In a second terminal, activate the same environment and start the simulated event stream:
+
+```bash
+python tools/fake_events.py
+```
+
+To add a demo weekly report, run:
+
+```bash
+python tools/fake_report.py
+```
+
+Weather defaults to the demo hive location. Override it with `WAGGLE_LAT`, `WAGGLE_LON`, and `WAGGLE_LOCATION` before starting the server.
+
+The dashboard also includes a one-click demo scenario, client-side hive/event filters, and a dependency-free SVG confidence chart. The demo endpoint is intended for local presentation use only.
+
+Critical events can be acknowledged from the event table, and recent weekly reports remain selectable in the report history control.
+
+The API documentation is available at <http://127.0.0.1:8000/docs>. Run the panel tests with:
+
+```bash
+python -m unittest discover -s panel/tests -v
+```

@@ -1,0 +1,2 @@
+"""Waggle monitoring panel."""
+
