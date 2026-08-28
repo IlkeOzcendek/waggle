@@ -7,62 +7,190 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Ana içeriğe geç</a>
   <header>
     <div>
       <p class="eyebrow">EDGE AI KOVAN İZLEME</p>
-      <h1>Waggle</h1>
+      <h1 id="panel-name">Waggle</h1>
       <p class="tagline">Kovanları dinleyen yapay zekâ</p>
     </div>
-    <div class="connection"><span></span> Sistem bağlı</div>
+    <div class="header-actions"><div class="connection" role="status" aria-live="polite"><span aria-hidden="true"></span><span class="connection-label">Sistem bağlı</span></div><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
   </header>
 
-  <main>
-    <section>
-      <div class="section-title">
-        <div><p class="eyebrow">CANLI DURUM</p><h2>Kovanlar</h2></div>
-        <div class="live-actions"><p id="updated">Veri bekleniyor…</p><button id="demo-button" class="primary-button" type="button">Demo senaryosunu başlat</button></div>
-      </div>
-      <div id="hives" class="hive-grid"></div>
-    </section>
+  <nav class="main-nav" aria-label="Ana menü">
+    <button class="nav-button active" data-view="overview" type="button" aria-current="page">Genel Bakış</button>
+    <button class="nav-button" data-view="hives" type="button" aria-current="false">Kovanlarım</button>
+    <button class="nav-button" data-view="alarms" type="button" aria-current="false">Alarmlar <span id="nav-alarm-count" class="nav-count" hidden>0</span></button>
+    <button class="nav-button" data-view="reports" type="button" aria-current="false">Raporlar</button>
+    <button class="nav-button" data-view="exports" type="button" aria-current="false">Dışa Aktar</button>
+    <button class="nav-button" data-view="status" type="button" aria-current="false">Sistem Durumu</button>
+    <button class="nav-button" data-view="settings" type="button" aria-current="false">Ayarlar</button>
+  </nav>
 
-    <section class="context-grid">
-      <article class="weather-card">
-        <p class="eyebrow">SAHA BAĞLAMI</p>
-        <div class="weather-main"><div><h2>Hava durumu</h2><p id="weather-location">Yükleniyor…</p></div><strong id="weather-temp">—</strong></div>
-        <div id="weather-details" class="weather-details"><span>Nem —</span><span>Rüzgâr —</span></div>
-      </article>
-      <article class="report-card">
-        <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Değerlendirme</h2></div><select id="report-select" aria-label="Rapor geçmişi"><option value="">Rapor yok</option></select></div>
-        <span id="report-period" class="report-period"></span>
-        <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
-        <ul id="report-actions" class="report-actions"></ul>
-      </article>
-    </section>
-
-    <section class="chart-section">
-      <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Model güveni</h2></div><div class="chart-legend"><span class="h1-dot">H1</span><span class="h2-dot">H2</span><span class="h3-dot">H3</span></div></div>
-      <div class="chart-card"><svg id="confidence-chart" viewBox="0 0 900 220" role="img" aria-label="Kovan güven değerleri grafiği"></svg></div>
-    </section>
-
-    <section class="feed-section">
-      <div class="section-title">
-        <div><p class="eyebrow">TELEMETRİ</p><h2>Olay akışı</h2></div>
-        <div class="feed-actions">
-          <label>Kovan <select id="hive-filter"><option value="all">Tümü</option><option>H1</option><option>H2</option><option>H3</option></select></label>
-          <label>Olay <select id="event-filter"><option value="all">Tümü</option><option value="healthy">Normal</option><option value="uncertain">Belirsiz</option><option value="queenless_suspected">Kritik</option></select></label>
-          <button id="sound-toggle" type="button">Sesli alarm: açık</button>
+  <main id="main-content" tabindex="-1">
+    <div id="overview-view" class="app-view">
+      <section>
+        <div class="section-title">
+          <div><p class="eyebrow">GENEL BAKIŞ</p><h2>Kovanlarınızın durumu</h2></div>
+          <div class="live-actions"><p id="updated">Veri bekleniyor…</p><button id="demo-button" class="primary-button" type="button">Demo senaryosunu başlat</button></div>
         </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th><th>İşlem</th></tr></thead>
-          <tbody id="events"><tr><td colspan="5">Henüz olay yok.</td></tr></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="summary-grid" aria-label="Kovan durum özeti">
+          <article><span>Toplam kovan</span><strong id="summary-total">—</strong></article>
+          <article class="summary-normal"><span>Normal</span><strong id="summary-normal">—</strong></article>
+          <article class="summary-warning"><span>Uyarı</span><strong id="summary-warning">—</strong></article>
+          <article class="summary-critical"><span>Kritik</span><strong id="summary-critical">—</strong></article>
+        </div>
+        <div class="section-subtitle"><h2>Kovanlarım</h2><p>Detaylarını görmek istediğiniz kovanı seçin.</p></div>
+        <div id="hives" class="hive-grid"></div>
+      </section>
+
+      <section>
+        <article class="weather-card">
+          <p class="eyebrow">SAHA BAĞLAMI</p>
+          <div class="weather-main"><div><h2>Hava durumu</h2><p id="weather-location">Yükleniyor…</p></div><strong id="weather-temp">—</strong></div>
+          <div id="weather-details" class="weather-details"><span>Nem —</span><span>Rüzgâr —</span></div>
+        </article>
+      </section>
+    </div>
+
+    <div id="detail-view" class="app-view" hidden>
+      <button id="back-overview" class="back-button" type="button">← Tüm kovanlara dön</button>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">KOVAN DETAYI</p><h2 id="detail-title">Kovan</h2></div><span id="detail-status" class="badge">Veri bekleniyor</span></div>
+        <div id="detail-summary" class="detail-summary"></div>
+      </section>
+      <section class="chart-section">
+        <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Model güveni</h2></div><div id="chart-legend" class="chart-legend"></div></div>
+        <div class="chart-card"><svg id="confidence-chart" viewBox="0 0 900 220" role="img" aria-label="Seçili kovanın güven değerleri grafiği"></svg></div>
+      </section>
+      <section class="feed-section">
+        <div class="section-title">
+          <div><p class="eyebrow">TELEMETRİ</p><h2>Son olaylar</h2></div>
+          <div class="feed-actions">
+            <label>Olay <select id="event-filter"><option value="all">Tümü</option><option value="healthy">Normal</option><option value="uncertain">Belirsiz</option><option value="queenless_suspected">Kritik</option></select></label>
+            <button id="sound-toggle" type="button">Sesli alarm: açık</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption class="visually-hidden">Seçili kovanın son yapay zekâ olayları</caption>
+            <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th><th>İşlem</th></tr></thead>
+            <tbody id="events"><tr><td colspan="5">Henüz olay yok.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div id="reports-view" class="app-view" hidden>
+      <section>
+        <article class="report-card report-page-card">
+          <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Haftalık değerlendirmeler</h2></div><select id="report-select" aria-label="Rapor geçmişi"><option value="">Rapor yok</option></select></div>
+          <span id="report-period" class="report-period"></span>
+          <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
+          <ul id="report-actions" class="report-actions"></ul>
+        </article>
+      </section>
+    </div>
+
+    <div id="hives-view" class="app-view" hidden>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">KOVAN YÖNETİMİ</p><h2>Kovanlarım</h2></div><button id="show-hive-form" class="primary-button" type="button">+ Yeni kovan ekle</button></div>
+        <p class="management-intro">Kovan adlarını ve konumlarını buradan yönetin. Sensör kimliği sistem tarafından otomatik oluşturulur.</p>
+        <form id="hive-form" class="hive-form" hidden>
+          <h3 id="hive-form-title">Yeni kovan ekle</h3>
+          <div><label for="hive-name">Kovan adı</label><input id="hive-name" name="name" placeholder="Örn. Arka Bahçe Kovanı" required minlength="2" maxlength="80"></div>
+          <div><label for="hive-location">Konum</label><input id="hive-location" name="location" placeholder="Örn. Ankara / Gölbaşı" maxlength="160"></div>
+          <div class="form-actions"><button id="cancel-hive-form" type="button">Vazgeç</button><button id="save-hive-button" class="primary-button" type="submit">Kovanı kaydet</button></div>
+          <p id="hive-form-message" class="form-message" role="status"></p>
+        </form>
+        <div id="managed-hives" class="managed-hive-list"></div>
+      </section>
+    </div>
+
+    <div id="alarms-view" class="app-view" hidden>
+      <section>
+        <div class="section-title">
+          <div><p class="eyebrow">ALARM MERKEZİ</p><h2>Kritik olaylar</h2></div>
+          <label>Göster <select id="alarm-filter"><option value="open">Açık alarmlar</option><option value="acknowledged">Kontrol edilenler</option><option value="all">Tümü</option></select></label>
+        </div>
+        <div class="alarm-summary"><div><span>Açık alarm</span><strong id="open-alarm-count">0</strong></div><p>Açık alarmları fiziksel kovan kontrolünden sonra işaretleyin.</p></div>
+        <div id="alarms-list" class="alarms-list"><p>Alarm verileri yükleniyor…</p></div>
+      </section>
+    </div>
+
+    <div id="exports-view" class="app-view" hidden>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">VERİ YÖNETİMİ</p><h2>Dışa aktar</h2></div></div>
+        <p class="management-intro">Kayıtları Excel için CSV veya sistem entegrasyonları için JSON biçiminde indirin.</p>
+        <div class="export-grid">
+          <article><div><span class="export-icon">♜</span><h3>Kovanlar</h3><p>Aktif ve arşivlenmiş bütün kovanların adları, konumları ve teknik kimlikleri.</p></div><div><a href="/api/export/hives.csv" download>CSV indir</a><a href="/api/export/hives.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">↗</span><h3>Tüm olaylar</h3><p>Model sonuçları, güven değerleri, zamanlar ve kovan bilgileri.</p></div><div><a href="/api/export/events.csv" download>CSV indir</a><a href="/api/export/events.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">!</span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">≡</span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
+          <article class="backup-card"><div><span class="export-icon">↓</span><h3>Tam veritabanı yedeği</h3><p>Kovanlar, olaylar, alarm durumları ve raporları içeren tutarlı SQLite yedeğini indirin. Bu dosyayı güvenli bir yerde saklayın.</p></div><div><a href="/api/backup/database" download>SQLite yedeğini indir</a></div></article>
+          <article class="backup-card restore-card"><div><span class="export-icon">↑</span><h3>Yedekten geri yükle</h3><p>Geçerli bir Waggle SQLite yedeği seçin. Mevcut veriler değiştirilmeden hemen önce sunucuda otomatik bir kurtarma kopyası oluşturulur.</p></div><div class="restore-actions"><label for="restore-file">Yedek dosyası</label><input id="restore-file" type="file" accept=".db,application/vnd.sqlite3,application/octet-stream"><button id="restore-backup" type="button">Yedeği geri yükle</button></div><p id="restore-message" class="form-message" role="status"></p></article>
+        </div>
+      </section>
+    </div>
+
+    <div id="status-view" class="app-view" hidden>
+      <section>
+        <div class="section-title">
+          <div><p class="eyebrow">BAĞLANTI VE ENTEGRASYON</p><h2>Sistem durumu</h2></div>
+          <button id="refresh-status" type="button">Şimdi kontrol et</button>
+        </div>
+        <p class="management-intro">Panelin, kayıt sisteminin ve yapay zekâ bağlantılarının çalışıp çalışmadığını buradan takip edin.</p>
+        <article id="status-overview" class="status-overview"><span class="status-pulse"></span><div><strong>Kontrol ediliyor…</strong><p>Sistem bileşenleri sorgulanıyor.</p></div></article>
+        <div id="status-components" class="status-components"></div>
+        <p id="status-updated" class="status-updated"></p>
+      </section>
+    </div>
+
+    <div id="settings-view" class="app-view" hidden>
+      <section>
+        <div class="section-title"><div><p class="eyebrow">KİŞİSELLEŞTİRME</p><h2>Ayarlar</h2></div></div>
+        <p class="management-intro">Panel adını, konum bilgisini ve alarm davranışını buradan değiştirebilirsiniz.</p>
+        <form id="settings-form" class="settings-form">
+          <article>
+            <div><h3>Panel bilgileri</h3><p>Kullanıcıların panelde göreceği ad ve saha konumu.</p></div>
+            <label for="settings-panel-name">Panel adı<input id="settings-panel-name" name="panel_name" required minlength="2" maxlength="60"></label>
+            <label for="settings-location">Kovanlık konumu<input id="settings-location" name="location_name" required minlength="2" maxlength="100"></label>
+          </article>
+          <article>
+            <div><h3>Alarm davranışı</h3><p>Model güveni bu değere ulaştığında olay kritik alarm kabul edilir.</p></div>
+            <label for="settings-threshold">Kritik alarm eşiği <strong id="threshold-value">%85</strong><input id="settings-threshold" name="alarm_threshold" type="range" min="50" max="99" step="1" value="85"></label>
+            <label class="switch-row" for="settings-sound"><span><strong>Sesli alarm</strong><small>Kritik olay geldiğinde uyarı sesi çal.</small></span><input id="settings-sound" name="sound_enabled" type="checkbox"></label>
+          </article>
+          <article>
+            <div><h3>Ekran yenileme</h3><p>Kovan bilgilerinin kaç saniyede bir güncelleneceğini seçin.</p></div>
+            <label for="settings-refresh">Yenileme sıklığı<select id="settings-refresh" name="refresh_seconds"><option value="2">2 saniye</option><option value="5">5 saniye</option><option value="10">10 saniye</option><option value="30">30 saniye</option><option value="60">60 saniye</option></select></label>
+          </article>
+          <article>
+            <div><h3>İsteğe bağlı çevrimiçi özellikler</h3><p>Waggle’ın temel kovan izleme işlevleri internet olmadan çalışır.</p></div>
+            <label class="switch-row" for="settings-weather"><span><strong>Çevrimiçi hava durumu</strong><small>Açıldığında yapılandırılmış koordinatlar Open-Meteo servisine gönderilir.</small></span><input id="settings-weather" name="weather_enabled" type="checkbox"></label>
+          </article>
+          <article>
+            <div><h3>Yardım ve başlangıç rehberi</h3><p>Waggle’ın temel kullanım adımlarını yeniden görüntüleyin.</p></div>
+            <button id="reopen-guide" type="button">Başlangıç rehberini aç</button>
+          </article>
+          <div class="settings-actions"><p id="settings-message" role="status"></p><button class="primary-button" type="submit">Ayarları kaydet</button></div>
+        </form>
+      </section>
+    </div>
   </main>
 
+  <dialog id="onboarding-dialog" class="onboarding-dialog" aria-labelledby="onboarding-title">
+    <div class="onboarding-head"><div><p class="eyebrow">HIZLI BAŞLANGIÇ</p><h2 id="onboarding-title">Waggle’a hoş geldiniz</h2><p>Dört kısa adımda kovanlarınızı izlemeye başlayın.</p></div><button id="close-guide" type="button" aria-label="Rehberi kapat">×</button></div>
+    <div class="onboarding-steps">
+      <article><span>1</span><div><h3>Kovanınızı ekleyin</h3><p><strong>Kovanlarım</strong> bölümünden anlaşılır bir ad ve konum girin. Teknik sensör kimliğini Waggle otomatik oluşturur.</p></div></article>
+      <article><span>2</span><div><h3>Cihazı veya modeli bağlayın</h3><p>Kovan cihazı ve Ilke’nin modeli güvenli olay adresine veri gönderir. Bağlantıyı <strong>Sistem Durumu</strong> ekranından izleyin.</p></div></article>
+      <article><span>3</span><div><h3>Uyarıları takip edin</h3><p>Kritik bir sonuç geldiğinde <strong>Alarmlar</strong> bölümünü açın. Fiziksel kontrolden sonra alarmı kontrol edildi olarak işaretleyin.</p></div></article>
+      <article><span>4</span><div><h3>Rapor ve yedekleri kullanın</h3><p>Haftalık değerlendirmeleri okuyun; gerektiğinde kayıtları dışa aktarın veya tam veritabanı yedeği indirin.</p></div></article>
+    </div>
+    <div class="onboarding-actions"><small>Bu rehberi daha sonra Ayarlar bölümünden tekrar açabilirsiniz.</small><button id="complete-guide" class="primary-button" type="button">Anladım, panele geç</button></div>
+  </dialog>
+
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=7"></script>
+  <script src="/static/panel.js?v=20"></script>
 </body>
 </html>

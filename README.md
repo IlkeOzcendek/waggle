@@ -222,17 +222,85 @@ validated claim remains precise: Waggle detects persistent change relative to
 a hive's learned healthy acoustic profile; an alarm requests inspection rather
 than declaring queen death as a certainty.
 
+The authenticated **Sistem Durumu** page shows database integrity, stored record counts,
+and the latest device/model and report integration activity in user-friendly language.
+
+Panel name, location, critical alarm threshold, alert sound, and refresh interval can be
+changed from the authenticated **Ayarlar** page and are stored persistently in SQLite.
+
+The system status screen marks device/model activity as delayed when no new event
+arrives for 15 minutes, and weekly reports as stale after eight days. These
+thresholds can be changed with `WAGGLE_DEVICE_STALE_SECONDS` and
+`WAGGLE_REPORT_STALE_SECONDS`.
+
+First-time users receive a four-step quick-start guide. Completion is stored in SQLite,
+and the guide can be reopened later from the settings page.
+
 ## Run the panel locally
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and replace the example secrets.
 uvicorn panel.app.main:app --reload
 ```
 
 Python 3.10+ is recommended. Python 3.9 is supported through the conditional
 `eval_type_backport` dependency in `requirements.txt`.
+
+For a presentation-ready server with deterministic H1/H2/H3 events and a
+weekly report, use the one-command demo:
+
+```bash
+python tools/run_demo.py
+```
+
+See [`DEMO_CHECKLIST.md`](DEMO_CHECKLIST.md) for the presentation flow and
+recovery steps. [`PRESENTATION_GUIDE.md`](PRESENTATION_GUIDE.md) contains a
+four-minute Turkish narration, closing message, and answers to likely questions.
+
+Open <http://127.0.0.1:8000> and sign in with the local demo account:
+
+- Username: `admin`
+- Password: `waggle-demo`
+
+To open the panel from an unused Android phone on the same trusted local network,
+run `python tools/run_demo.py --lan` and use the phone address printed in the
+terminal. This does not require internet access. See
+[`FIELD_PHONE.md`](FIELD_PHONE.md) for setup, troubleshooting, and security notes.
+
+Configuration is loaded automatically from `.env`, which is ignored by Git.
+Set `WAGGLE_ENV=production` for a real deployment; startup then fails if the
+default password, device key, session secret, or secure cookie setting is unsafe.
+Sessions expire after eight hours by default.
+
+The panel supports dynamic hive management, alarm acknowledgement, CSV/JSON
+exports, SQLite backup and restore, system-health monitoring, and authenticated
+local access. Development credentials are for local demonstration only.
+
+## Send an event from an edge device
+
+Panel users authenticate with a browser session. Edge services use a separate
+`X-Device-Key` that can only submit events and generated reports. Set a strong key on both the server
+and device before deployment:
+
+```bash
+export WAGGLE_DEVICE_KEY="replace-with-a-long-random-key"
+uvicorn panel.app.main:app --reload
+```
+
+Send a model result from another terminal:
+
+```bash
+export WAGGLE_DEVICE_KEY="replace-with-a-long-random-key"
+python tools/send_event.py --hive H4 --event queenless_suspected --confidence 0.91
+```
+
+The client retries temporary failures and stores unsent events in
+`.waggle_pending_events.jsonl`. On the next run it sends queued events first.
+For local demos, both sides default to `waggle-device-demo`.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same
 environment and start the simulated event stream:
@@ -247,8 +315,11 @@ To add a demo weekly report, run:
 python tools/fake_report.py
 ```
 
-Weather defaults to the demo hive location. Override it with `WAGGLE_LAT`,
-`WAGGLE_LON`, and `WAGGLE_LOCATION` before starting the server.
+The core product is offline-first. Online weather is disabled by default and no
+coordinates are sent to a third party unless a user explicitly enables it in
+**Ayarlar**. When enabled, configured `WAGGLE_LAT` and `WAGGLE_LON` coordinates
+are sent to Open-Meteo and cached for ten minutes. `WAGGLE_LOCATION` controls
+the user-facing label; weather failure never blocks hive monitoring.
 
 The dashboard includes a one-click demo scenario, client-side hive/event
 filters, and a dependency-free SVG confidence chart. The demo endpoint and
@@ -263,6 +334,19 @@ panel tests with:
 ```bash
 python -m unittest discover -s panel/tests -v
 ```
+
+Pull requests automatically run the panel suite on Python 3.9 and 3.11, compile
+all Python modules, and validate both JavaScript entry points. The PR template
+also checks the frozen event contract, secret handling, UI verification, and
+recovery notes before review.
+
+The panel supports keyboard navigation with a skip link, visible focus states,
+focus transfer between views, current-page navigation announcements, labeled
+tables and restore controls, live system status announcements, and reduced-motion
+preferences.
+
+Session tokens are also required to use their canonical URL-safe encoding, so
+alternate textual encodings of the same signed bytes are rejected.
 
 ---
 
