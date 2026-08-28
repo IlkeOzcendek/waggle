@@ -33,6 +33,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s panel/tests -v
       - run: python -m unittest discover -s ear/tests -v
-      - run: python -m compileall -q ear panel tools
+      - run: python -m unittest discover -s brain/tests -v
+      - run: python -m compileall -q brain ear panel tools
       - run: node --check panel/app/static/panel.js
       - run: node --check panel/app/static/login.js

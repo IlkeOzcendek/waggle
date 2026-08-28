@@ -15,7 +15,7 @@
 
 ```bash
 source .venv/bin/activate
-python tools/run_demo.py
+python tools/run_demo.py --foundry
 ```
 
 Open <http://127.0.0.1:8000> and sign in with `admin` / `waggle-demo`.
@@ -26,11 +26,12 @@ Open <http://127.0.0.1:8000> and sign in with `admin` / `waggle-demo`.
 2. Open **Deneme Kovanı (H3)** and explain its persistent `ALARM` state.
 3. Show its acoustic-change chart and event history.
 4. Open **Alarmlar** and acknowledge the H3 alarm.
-5. Open **Raporlar** and show the weekly AI recommendations.
-6. Open **Kovanlarım** and explain automatic device identifiers.
-7. Optionally add a new hive and show its initial **Veri yok** state.
-8. Explain that the real audio model sends the same event JSON through the device client.
-9. Show that online weather is disabled by default and requires explicit user consent.
+5. Open **Raporlar** and show the locally generated Turkish and English AI recommendations.
+6. Use the **TR / EN** control to switch the whole interface and preferred report language.
+7. Open **Kovanlarım** and explain automatic device identifiers.
+8. Optionally add a new hive and show its initial **Veri yok** state.
+9. Explain that the real audio model sends the same event JSON through the device client.
+10. Show that online weather is disabled by default and requires explicit user consent.
 
 ## Privacy and offline message
 
@@ -38,11 +39,13 @@ Open <http://127.0.0.1:8000> and sign in with `admin` / `waggle-demo`.
 - Online weather is optional and disabled by default.
 - Enabling weather sends the configured latitude and longitude to Open-Meteo.
 - The anomaly fraction is not a probability; the alarm requests inspection.
+- Foundry Local and Phi generate the report on-device; the recorded generator preserves provenance.
 
 ## Recovery
 
 - If the page does not open, stop the command with Control+C and run it again.
 - If port 8000 is busy, run `python tools/run_demo.py --port 8001`.
+- If Foundry Local is unavailable, the report layer uses its labelled deterministic safety fallback.
 - If the database should remain unchanged, start with `--no-seed`.
 - Unsent edge events remain in `.waggle_pending_events.jsonl` and are retried later.
 - If live interaction fails, use previously captured panel screenshots while explaining the same flow.

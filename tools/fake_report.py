@@ -23,6 +23,8 @@ def main() -> None:
             "H1 için rutin takibe devam edin.",
         ],
         "hive_ids": ["H1", "H2", "H3"],
+        "language": "tr",
+        "generator": "fake-demo",
     }
     response = requests.post(
         args.url,
