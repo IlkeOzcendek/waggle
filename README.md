@@ -193,6 +193,7 @@ hashes are retained so unchanged files are not analyzed twice.
 | Path | Purpose |
 | --- | --- |
 | `ear/mendeley_streaming_monitor.py` | Reproduce the sudden queen-loss replay |
+| `ear/export_onnx_model.py` | Export and verify the portable ONNX monitor |
 | `ear/wav_isolation_monitor.py` | Score a single WAV recording |
 | `ear/build_wav_isolation_profile.py` | Build a hive-specific healthy profile |
 | `ear/monitor_wav_folder.py` | Continuously process incoming WAV files |
@@ -215,6 +216,29 @@ creation to persistent alarm generation.
 | Persistent monitoring | Produces `NORMAL`, `WATCH`, and `ALARM` states |
 | Continuous operation | Monitors incoming WAV files without duplicate processing |
 | Event output | Writes timestamped, integration-ready CSV records |
+| Portable inference | ONNX Runtime decisions match joblib on all 5,400 verification windows |
+
+### Portable ONNX inference
+
+The selected `RobustScaler + IsolationForest` pipeline is packaged as
+`results/mendeley_isolation_monitor.onnx`. The graph retains the 21-feature
+schema and the 5-second `WATCH` / 30-second `ALARM` rules as model metadata.
+Reproduce the export and full CSV decision-parity check with:
+
+```bash
+python ear/export_onnx_model.py \
+  results/mendeley_isolation_monitor.joblib \
+  results/mendeley_isolation_monitor.onnx \
+  --verification-csv data/queen_loss_africanized_honeybee_dataset.csv \
+  --report results/mendeley_onnx_parity.json
+```
+
+The WAV tools accept either format without changing their command-line usage:
+
+```bash
+python ear/wav_isolation_monitor.py \
+  results/mendeley_isolation_monitor.onnx recording.wav
+```
 
 This repository provides the tested acoustic detection layer that can feed an
 application interface, local report generator, or notification service. Its

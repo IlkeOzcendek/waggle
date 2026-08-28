@@ -17,10 +17,10 @@ import os
 import sys
 import time
 
-import joblib
 import numpy as np
 
 from wav_isolation_monitor import update_run, wav_features
+from model_runtime import anomaly_flags, load_monitor
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -47,12 +47,12 @@ def arguments(): # follow the WAV files using the trained model
     parser.add_argument("--panel-hive", help="Panel hive id, for example H3")
     parser.add_argument(
         "--device-key",
-        default=os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo"),
+        default = os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo"),
     )
     parser.add_argument(
         "--panel-queue",
-        type=Path,
-        default=Path(".waggle_pending_events.jsonl"),
+        type = Path,
+        default = Path(".waggle_pending_events.jsonl"),
     )
 
     return parser.parse_args()
@@ -138,7 +138,7 @@ def scan(
         if names != artifact["feature_columns"]:
             raise SystemExit(f"Feature schema mismatch for {path}")
 
-        flags = artifact["model"].predict(artifact["scaler"].transform(values)) == -1
+        flags = anomaly_flags(artifact, values)
 
         initial = int(state["consecutive_anomalies"])
 
@@ -198,7 +198,7 @@ def main():
     if args.poll_seconds <= 0:
         raise SystemExit("--poll seconds must be positive !!")
 
-    artifact = joblib.load(args.model)
+    artifact = load_monitor(args.model)
 
     while True:
         count = scan(
