@@ -22,13 +22,83 @@ let managedHivesData = [];
 let alarmEvents = [];
 let selectedHiveId = null;
 let editingHiveId = null;
+let currentLanguage = "tr";
 
-const labels = { normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" };
+const english = {
+  "Ana içeriğe geç": "Skip to main content",
+  "EDGE AI KOVAN İZLEME": "EDGE AI HIVE MONITORING",
+  "Kovanları dinleyen yapay zekâ": "AI that listens to hives",
+  "Sistem bağlı": "System connected",
+  "Sistem çalışıyor": "System running",
+  "Çıkış yap": "Sign out",
+  "Genel Bakış": "Overview", "Kovanlarım": "My hives", "Alarmlar": "Alarms",
+  "Raporlar": "Reports", "Dışa Aktar": "Export", "Sistem Durumu": "System status", "Ayarlar": "Settings",
+  "GENEL BAKIŞ": "OVERVIEW", "Kovanlarınızın durumu": "Status of your hives",
+  "Veri bekleniyor…": "Waiting for data…", "Demo senaryosunu başlat": "Start demo scenario",
+  "Toplam kovan": "Total hives", "Normal": "Normal", "Uyarı": "Watch", "Kritik": "Critical", "Veri yok": "No data",
+  "Detaylarını görmek istediğiniz kovanı seçin.": "Select a hive to view its details.",
+  "SAHA BAĞLAMI": "FIELD CONTEXT", "Hava durumu": "Weather", "Yükleniyor…": "Loading…",
+  "← Tüm kovanlara dön": "← Back to all hives", "KOVAN DETAYI": "HIVE DETAIL", "Kovan": "Hive",
+  "Veri bekleniyor": "Waiting for data", "EĞİLİM": "TREND", "Akustik değişim oranı": "Acoustic change ratio",
+  "TELEMETRİ": "TELEMETRY", "Son olaylar": "Recent events", "Durum": "Status", "Tümü": "All",
+  "İzle": "Watch", "Alarm": "Alarm", "Sesli alarm: açık": "Audible alarm: on", "Sesli alarm: kapalı": "Audible alarm: off",
+  "Zaman": "Time", "Aykırı ses": "Anomalous audio", "İşlem": "Action", "Henüz olay yok.": "No events yet.",
+  "YAPAY ZEKÂ RAPORU": "AI REPORT", "Haftalık değerlendirmeler": "Weekly assessments",
+  "Rapor geçmişi": "Report history", "Rapor yok": "No reports", "Son rapor": "Latest report",
+  "Türkçe rapor": "Turkish report", "İngilizce rapor": "English report", "Üretici": "Generator",
+  "Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.": "No report has been generated yet. Foundry Local will populate this area.",
+  "KOVAN YÖNETİMİ": "HIVE MANAGEMENT", "+ Yeni kovan ekle": "+ Add new hive",
+  "Yeni kovan ekle": "Add new hive", "Kovan adı": "Hive name", "Konum": "Location", "Vazgeç": "Cancel", "Kovanı kaydet": "Save hive",
+  "ALARM MERKEZİ": "ALARM CENTER", "Kritik olaylar": "Critical events", "Göster": "Show",
+  "Açık alarmlar": "Open alarms", "Kontrol edilenler": "Inspected", "Açık alarm": "Open alarms",
+  "Açık alarmları fiziksel kovan kontrolünden sonra işaretleyin.": "Mark alarms only after a physical hive inspection.",
+  "Alarm verileri yükleniyor…": "Loading alarm data…", "Kalıcı akustik değişim": "Persistent acoustic change",
+  "Kontrol edildi": "Inspected", "Kontrol edildi olarak işaretle": "Mark as inspected",
+  "VERİ YÖNETİMİ": "DATA MANAGEMENT", "Dışa aktar": "Export", "CSV indir": "Download CSV", "JSON indir": "Download JSON",
+  "Tüm olaylar": "All events", "Kritik alarmlar": "Critical alarms", "Tam veritabanı yedeği": "Full database backup",
+  "SQLite yedeğini indir": "Download SQLite backup", "Yedekten geri yükle": "Restore backup", "Yedek dosyası": "Backup file",
+  "BAĞLANTI VE ENTEGRASYON": "CONNECTIVITY AND INTEGRATION", "Sistem durumu": "System status", "Şimdi kontrol et": "Check now",
+  "Kontrol ediliyor…": "Checking…", "Sistem bileşenleri sorgulanıyor.": "Checking system components.",
+  "KİŞİSELLEŞTİRME": "PERSONALIZATION", "Panel bilgileri": "Panel information", "Panel adı": "Panel name",
+  "Kovanlık konumu": "Apiary location", "Alarm davranışı": "Alarm behavior", "Sesli alarm": "Audible alarm",
+  "Ekran yenileme": "Screen refresh", "Yenileme sıklığı": "Refresh interval", "Uygulama dili": "Application language",
+  "Panel ve yapay zekâ raporlarının dilini seçin.": "Choose the language of the panel and AI reports.", "Dil": "Language", "Türkçe": "Turkish",
+  "İsteğe bağlı çevrimiçi özellikler": "Optional online features", "Çevrimiçi hava durumu": "Online weather",
+  "Yardım ve başlangıç rehberi": "Help and getting-started guide", "Başlangıç rehberini aç": "Open getting-started guide",
+  "Ayarları kaydet": "Save settings", "HIZLI BAŞLANGIÇ": "QUICK START", "Waggle’a hoş geldiniz": "Welcome to Waggle",
+  "Anladım, panele geç": "Got it, open the panel"
+};
+
+function t(value) { return currentLanguage === "en" ? (english[value] || value) : value; }
+
+function translatePage(root = document.body) {
+  document.documentElement.lang = currentLanguage;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node._waggleOriginal) node._waggleOriginal = node.nodeValue;
+    const original = node._waggleOriginal;
+    const trimmed = original.trim();
+    if (!trimmed) continue;
+    const translated = t(trimmed);
+    node.nodeValue = original.replace(trimmed, translated);
+  }
+  document.querySelectorAll("[placeholder],[aria-label],[title]").forEach(element => {
+    ["placeholder", "aria-label", "title"].forEach(attribute => {
+      if (!element.hasAttribute(attribute)) return;
+      const dataKey = `waggle${attribute.replace('-', '')}`;
+      if (!element.dataset[dataKey]) element.dataset[dataKey] = element.getAttribute(attribute);
+      element.setAttribute(attribute, t(element.dataset[dataKey]));
+    });
+  });
+  document.querySelector("#language-toggle").textContent = currentLanguage === "tr" ? "EN" : "TR";
+}
+
+function statusLabel(status) { return t({ normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" }[status]); }
 const colors = { normal: "#15803d", uyari: "#b7791f", kritik: "#c62828", veri_yok: "#6d7685" };
 const hiveNames = { H1: "Bahçe Kovanı", H2: "Orman Kovanı", H3: "Deneme Kovanı" };
 
 function hiveLabel(hiveId) {
-  return `${hiveNames[hiveId] || "Kovan"} (${hiveId})`;
+  return `${hiveNames[hiveId] || t("Kovan")} (${hiveId})`;
 }
 
 function hiveColor(hiveId) {
@@ -45,8 +115,8 @@ function explainHiveIds(text) {
 }
 
 function dateLabel(value) {
-  if (!value) return "Henüz sinyal yok";
-  return new Intl.DateTimeFormat("tr-TR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
+  if (!value) return currentLanguage === "tr" ? "Henüz sinyal yok" : "No signal yet";
+  return new Intl.DateTimeFormat(currentLanguage === "tr" ? "tr-TR" : "en-GB", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
 }
 
 function escapeHtml(value) {
@@ -117,7 +187,7 @@ function render(data) {
   document.querySelector("#summary-critical").textContent = counts.kritik || 0;
   hivesEl.innerHTML = data.hives.map(hive => `
     <article class="hive-card" style="--status:${colors[hive.durum]}">
-      <div class="hive-head"><span class="hive-name">${escapeHtml(hive.name)}<small>${hive.hive_id}${hive.location ? ` · ${escapeHtml(hive.location)}` : ""}</small></span><span class="badge">${labels[hive.durum]}</span></div>
+      <div class="hive-head"><span class="hive-name">${escapeHtml(hive.name)}<small>${hive.hive_id}${hive.location ? ` · ${escapeHtml(hive.location)}` : ""}</small></span><span class="badge">${statusLabel(hive.durum)}</span></div>
       <div class="confidence">${hive.anomaly_fraction == null ? "—" : Math.round(hive.anomaly_fraction * 100) + "%"}</div>
       <div class="confidence-label">aykırı ses penceresi</div>
       <div class="event-time">${dateLabel(hive.timestamp)}</div>
@@ -173,10 +243,10 @@ function renderHiveDetail() {
   if (!hive) return;
   document.querySelector("#detail-title").textContent = hiveLabel(hive.hive_id);
   const status = document.querySelector("#detail-status");
-  status.textContent = labels[hive.durum];
+  status.textContent = statusLabel(hive.durum);
   status.style.setProperty("--status", colors[hive.durum]);
   document.querySelector("#detail-summary").innerHTML = `
-    <article><span>Güncel durum</span><strong style="color:${colors[hive.durum]}">${labels[hive.durum]}</strong></article>
+    <article><span>Güncel durum</span><strong style="color:${colors[hive.durum]}">${statusLabel(hive.durum)}</strong></article>
     <article><span>Aykırı ses penceresi</span><strong>${hive.anomaly_fraction == null ? "—" : Math.round(hive.anomaly_fraction * 100) + "%"}</strong></article>
     <article><span>Son sinyal</span><strong>${dateLabel(hive.timestamp)}</strong></article>`;
   document.querySelector("#chart-legend").innerHTML = `<span style="--dot:${hiveColor(hive.hive_id)}">${hiveLabel(hive.hive_id)}</span>`;
@@ -209,6 +279,7 @@ function showView(viewName, moveFocus = false) {
 
 function applySettings(settings) {
   currentSettings = settings;
+  currentLanguage = settings.language || "tr";
   soundEnabled = settings.sound_enabled;
   refreshSeconds = settings.refresh_seconds;
   soundButton.textContent = `Sesli alarm: ${soundEnabled ? "açık" : "kapalı"}`;
@@ -219,6 +290,8 @@ function applySettings(settings) {
   document.querySelector("#settings-sound").checked = settings.sound_enabled;
   document.querySelector("#settings-weather").checked = settings.weather_enabled;
   document.querySelector("#settings-refresh").value = String(settings.refresh_seconds);
+  document.querySelector("#settings-language").value = currentLanguage;
+  translatePage();
   clearInterval(refreshTimer);
   refreshTimer = setInterval(refresh, refreshSeconds * 1000);
 }
@@ -251,6 +324,19 @@ async function completeGuide() {
   closeGuide();
 }
 
+async function toggleLanguage() {
+  if (!currentSettings) return;
+  const language = currentLanguage === "tr" ? "en" : "tr";
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({...currentSettings, language}),
+  });
+  if (!response.ok) return;
+  applySettings(await response.json());
+  await Promise.all([refresh(), refreshContext(), refreshManagedHives(), refreshAlarms()]);
+}
+
 async function saveSettings(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -270,6 +356,7 @@ async function saveSettings(event) {
         refresh_seconds: Number(form.refresh_seconds.value),
         onboarding_completed: currentSettings?.onboarding_completed || false,
         weather_enabled: form.weather_enabled.checked,
+        language: form.language.value,
       }),
     });
     if (!response.ok) throw new Error("Ayarlar kaydedilemedi");
@@ -421,7 +508,8 @@ function renderWeatherDisabled() {
 }
 
 function renderReports(reports) {
-  latestReports = reports;
+  const matching = reports.filter(report => (report.language || "tr") === currentLanguage);
+  latestReports = matching.length ? matching : reports;
   reportSelect.innerHTML = reports.length ? reports.map((report, index) => `<option value="${report.id}">${index === 0 ? "Son rapor" : dateLabel(report.period_end)}</option>`).join("") : '<option value="">Rapor yok</option>';
   renderSelectedReport();
 }
@@ -430,8 +518,10 @@ function renderSelectedReport() {
   const report = latestReports.find(item => String(item.id) === reportSelect.value) || latestReports[0];
   if (!report) return;
   document.querySelector("#report-period").textContent = `${dateLabel(report.period_start)} – ${dateLabel(report.period_end)}`;
+  document.querySelector("#report-source").textContent = `${report.language === "en" ? t("İngilizce rapor") : t("Türkçe rapor")} · ${t("Üretici")}: ${report.generator || "manual"}`;
   document.querySelector("#report-summary").textContent = explainHiveIds(report.summary);
   document.querySelector("#report-actions").innerHTML = report.recommendations.map(item => `<li>${escapeHtml(explainHiveIds(item))}</li>`).join("");
+  translatePage(document.querySelector("#reports-view"));
 }
 
 async function acknowledgeEvent(eventId) {
@@ -548,6 +638,7 @@ alarmsList.addEventListener("click", event => {
 document.querySelector("#refresh-status").addEventListener("click", refreshSystemStatus);
 document.querySelector("#restore-backup").addEventListener("click", restoreBackup);
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
+document.querySelector("#language-toggle").addEventListener("click", toggleLanguage);
 document.querySelector("#reopen-guide").addEventListener("click", openGuide);
 document.querySelector("#close-guide").addEventListener("click", closeGuide);
 document.querySelector("#complete-guide").addEventListener("click", completeGuide);

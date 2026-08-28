@@ -303,7 +303,39 @@ Sessions expire after eight hours by default.
 
 The panel supports dynamic hive management, alarm acknowledgement, CSV/JSON
 exports, SQLite backup and restore, system-health monitoring, and authenticated
-local access. Development credentials are for local demonstration only.
+local access. The `TR / EN` control switches the interface, date formatting,
+and preferred report language. Development credentials are for local demonstration only.
+
+## Generate bilingual reports with Foundry Local
+
+Waggle uses the locally cached `phi-3.5-mini` model to select a constrained
+operational priority and approved action codes. The application validates that
+structure and renders the final report from reviewed Turkish or English safety
+text, so the model cannot turn an acoustic alarm into a definitive diagnosis.
+
+Install Foundry Local and download the model once:
+
+```bash
+brew install microsoft/foundrylocal/foundrylocal
+foundry model download phi-3.5-mini
+```
+
+Generate either language and send it to a running panel:
+
+```bash
+python -m brain.foundry_report --language tr
+python -m brain.foundry_report --language en
+```
+
+For the complete offline presentation flow with both reports:
+
+```bash
+python tools/run_demo.py --foundry
+```
+
+Foundry Local and Phi run on-device. If the local model is unavailable or its
+structured output fails validation, Waggle uses a deterministic safety fallback
+and records the report generator so the provenance remains visible in SQLite.
 
 ## Send an event from an edge device
 

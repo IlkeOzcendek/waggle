@@ -54,6 +54,8 @@ class ExportTest(unittest.TestCase):
         reports = json.loads(content)
         self.assertEqual(reports[0]["recommendations"], ["H3 kovanını kontrol edin."])
         self.assertEqual(reports[0]["hive_ids"], ["H3"])
+        self.assertEqual(reports[0]["language"], "tr")
+        self.assertEqual(reports[0]["generator"], "manual")
         self.assertEqual(media_type, "application/json; charset=utf-8")
         self.assertTrue(filename.endswith(".json"))
 

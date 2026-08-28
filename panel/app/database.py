@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS reports (
     summary TEXT NOT NULL,
     recommendations TEXT NOT NULL,
     hive_ids TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT 'tr' CHECK (language IN ('tr', 'en')),
+    generator TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -48,7 +50,8 @@ CREATE TABLE IF NOT EXISTS settings (
     sound_enabled INTEGER NOT NULL,
     refresh_seconds INTEGER NOT NULL,
     onboarding_completed INTEGER NOT NULL DEFAULT 0,
-    weather_enabled INTEGER NOT NULL DEFAULT 0
+    weather_enabled INTEGER NOT NULL DEFAULT 0,
+    language TEXT NOT NULL DEFAULT 'tr' CHECK (language IN ('tr', 'en'))
 );
 """
 
@@ -97,6 +100,21 @@ class EventStore:
             if "weather_enabled" not in settings_columns:
                 connection.execute(
                     "ALTER TABLE settings ADD COLUMN weather_enabled INTEGER NOT NULL DEFAULT 0"
+                )
+            if "language" not in settings_columns:
+                connection.execute(
+                    "ALTER TABLE settings ADD COLUMN language TEXT NOT NULL DEFAULT 'tr'"
+                )
+            report_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(reports)")
+            }
+            if "language" not in report_columns:
+                connection.execute(
+                    "ALTER TABLE reports ADD COLUMN language TEXT NOT NULL DEFAULT 'tr'"
+                )
+            if "generator" not in report_columns:
+                connection.execute(
+                    "ALTER TABLE reports ADD COLUMN generator TEXT NOT NULL DEFAULT 'manual'"
                 )
             table_sql = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'"
@@ -350,6 +368,7 @@ class EventStore:
             "refresh_seconds": row["refresh_seconds"],
             "onboarding_completed": bool(row["onboarding_completed"]),
             "weather_enabled": bool(row["weather_enabled"]),
+            "language": row["language"],
         }
 
     def update_settings(self, values: dict[str, object]) -> dict[str, object]:
@@ -357,12 +376,13 @@ class EventStore:
             connection.execute(
                 """UPDATE settings SET panel_name = ?, location_name = ?, alarm_threshold = ?,
                 sound_enabled = ?, refresh_seconds = ?, onboarding_completed = ?,
-                weather_enabled = ? WHERE id = 1""",
+                weather_enabled = ?, language = ? WHERE id = 1""",
                 (
                     values["panel_name"], values["location_name"], values["alarm_threshold"],
                     int(bool(values["sound_enabled"])), values["refresh_seconds"],
                     int(bool(values["onboarding_completed"])),
                     int(bool(values["weather_enabled"])),
+                    values.get("language", "tr"),
                 ),
             )
         return self.settings()
@@ -372,14 +392,17 @@ class EventStore:
         with self.connect() as connection:
             cursor = connection.execute(
                 """INSERT INTO reports
-                (period_start, period_end, summary, recommendations, hive_ids, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)""",
+                (period_start, period_end, summary, recommendations, hive_ids,
+                 language, generator, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     report.period_start.isoformat(),
                     report.period_end.isoformat(),
                     report.summary,
                     json.dumps(report.recommendations, ensure_ascii=False),
                     json.dumps(report.hive_ids),
+                    report.language,
+                    report.generator,
                     created_at.isoformat(),
                 ),
             )
@@ -399,6 +422,8 @@ class EventStore:
                 summary=row["summary"],
                 recommendations=json.loads(row["recommendations"]),
                 hive_ids=json.loads(row["hive_ids"]),
+                language=row["language"] if "language" in row.keys() else "tr",
+                generator=row["generator"] if "generator" in row.keys() else "manual",
                 created_at=datetime.fromisoformat(row["created_at"]),
             )
             for row in rows

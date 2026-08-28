@@ -62,6 +62,8 @@ class ReportIn(BaseModel):
     summary: str = Field(min_length=10, max_length=4000)
     recommendations: list[str] = Field(default_factory=list, max_length=10)
     hive_ids: list[str] = Field(default_factory=lambda: ["H1", "H2", "H3"])
+    language: Literal["tr", "en"] = "tr"
+    generator: str = Field(default="manual", min_length=2, max_length=80)
 
     @field_validator("hive_ids")
     @classmethod
@@ -108,3 +110,4 @@ class AppSettings(BaseModel):
     refresh_seconds: int = Field(ge=2, le=60)
     onboarding_completed: bool = False
     weather_enabled: bool = False
+    language: Literal["tr", "en"] = "tr"

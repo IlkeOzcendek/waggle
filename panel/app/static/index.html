@@ -14,7 +14,7 @@
       <h1 id="panel-name">Waggle</h1>
       <p class="tagline">Kovanları dinleyen yapay zekâ</p>
     </div>
-    <div class="header-actions"><div class="connection" role="status" aria-live="polite"><span aria-hidden="true"></span><span class="connection-label">Sistem bağlı</span></div><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
+    <div class="header-actions"><div class="connection" role="status" aria-live="polite"><span aria-hidden="true"></span><span class="connection-label">Sistem bağlı</span></div><button id="language-toggle" type="button" aria-label="Dili değiştir">EN</button><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
   </header>
 
   <nav class="main-nav" aria-label="Ana menü">
@@ -86,6 +86,7 @@
         <article class="report-card report-page-card">
           <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Haftalık değerlendirmeler</h2></div><select id="report-select" aria-label="Rapor geçmişi"><option value="">Rapor yok</option></select></div>
           <span id="report-period" class="report-period"></span>
+          <span id="report-source" class="report-period"></span>
           <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
           <ul id="report-actions" class="report-actions"></ul>
         </article>
@@ -165,6 +166,10 @@
             <label for="settings-refresh">Yenileme sıklığı<select id="settings-refresh" name="refresh_seconds"><option value="2">2 saniye</option><option value="5">5 saniye</option><option value="10">10 saniye</option><option value="30">30 saniye</option><option value="60">60 saniye</option></select></label>
           </article>
           <article>
+            <div><h3>Uygulama dili</h3><p>Panel ve yapay zekâ raporlarının dilini seçin.</p></div>
+            <label for="settings-language">Dil<select id="settings-language" name="language"><option value="tr">Türkçe</option><option value="en">English</option></select></label>
+          </article>
+          <article>
             <div><h3>İsteğe bağlı çevrimiçi özellikler</h3><p>Waggle’ın temel kovan izleme işlevleri internet olmadan çalışır.</p></div>
             <label class="switch-row" for="settings-weather"><span><strong>Çevrimiçi hava durumu</strong><small>Açıldığında yapılandırılmış koordinatlar Open-Meteo servisine gönderilir.</small></span><input id="settings-weather" name="weather_enabled" type="checkbox"></label>
           </article>
@@ -190,6 +195,6 @@
   </dialog>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=20"></script>
+  <script src="/static/panel.js?v=21"></script>
 </body>
 </html>

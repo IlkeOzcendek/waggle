@@ -21,11 +21,14 @@ hazırlanmıştır. Teknik ayrıntıya geçmeden önce çözülen problemi anlat
 ## 3. Yapay zekâ sonucu (60 saniye)
 
 - **Deneme Kovanı (H3)** ayrıntısını açın.
-- `%91 ana arı kaybı şüphesi` sonucunu ve güven grafiğini gösterin.
+- Kalıcı akustik değişimin `WATCH` ve ardından `ALARM` durumuna geçtiğini gösterin.
+- Grafikteki anomali oranının teşhis olasılığı olmadığını; modelin kovanın öğrendiği
+  normal sesten ne kadar kalıcı biçimde uzaklaşıldığını izlediğini açıklayın.
 - Akışı tek cümleyle anlatın:
 
-> Ses kaydı cihazda değerlendirilir, sonuç ortak olay sözleşmesiyle panele gelir,
-> SQLite'a kaydedilir ve kullanıcıya alarm olarak gösterilir.
+> Ses kaydı ONNX modeliyle cihazda değerlendirilir, sonuç ortak olay sözleşmesiyle
+> panele gelir, SQLite'a kaydedilir ve Foundry Local/Phi tarafından arıcıya uygun
+> bir rapora dönüştürülür.
 
 - Bunun kesin teşhis değil, fiziksel kontrol gerektiren bir karar desteği olduğunu
   özellikle söyleyin.
@@ -40,6 +43,8 @@ hazırlanmıştır. Teknik ayrıntıya geçmeden önce çözülen problemi anlat
 
 - **Kovanlarım** bölümünde yeni bir kovanın kolayca eklenebildiğini gösterin.
 - **Raporlar** bölümünde haftalık özet ve önerileri gösterin.
+- `TR / EN` düğmesiyle paneli İngilizceye geçirip Phi raporunun iki dili de
+  desteklediğini gösterin.
 - Hava durumunun isteğe bağlı çevrimiçi özellik olduğunu; varsayılan olarak kapalı
   kaldığını ve açık izin olmadan konum paylaşılmadığını belirtin.
 
@@ -54,8 +59,12 @@ hazırlanmıştır. Teknik ayrıntıya geçmeden önce çözülen problemi anlat
 çalışır. Gönderilemeyen olaylar cihaz tarafında kuyruğa alınır. Çevrimiçi hava
 durumu zaten varsayılan olarak kapalıdır.
 
-**Model yanlış sonuç verebilir mi?**  Evet. Güven değeri kullanıcıya gösterilir;
-ürün kesin teşhis yerine erken uyarı ve fiziksel kontrol önerisi sunar.
+**Model yanlış sonuç verebilir mi?**  Evet. Anomali oranı bir teşhis olasılığı
+değildir; ürün kesin teşhis yerine erken uyarı ve fiziksel kontrol önerisi sunar.
+
+**Rapor internetten mi geliyor?**  Hayır. Phi modeli Foundry Local üzerinde cihazda
+çalışır. Model geçersiz bir yapı üretirse güvenli ve kayıt altına alınan deterministik
+yedek rapor kullanılır.
 
 **Yeni kovan eklenebilir mi?**  Evet. Kullanıcı dostu ad ve konum girilir; teknik
 kimlik sistem tarafından otomatik atanır.

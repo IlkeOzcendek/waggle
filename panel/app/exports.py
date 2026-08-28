@@ -46,6 +46,8 @@ def export_rows(store: EventStore, dataset: Dataset) -> list[dict]:
             "summary": report.summary,
             "recommendations": report.recommendations,
             "hive_ids": report.hive_ids,
+            "language": report.language,
+            "generator": report.generator,
             "created_at": report.created_at.isoformat(),
         }
         for report in reports
@@ -79,5 +81,5 @@ def _empty_fieldnames(dataset: Dataset) -> list[str]:
         "hives": ["hive_id", "name", "location", "active", "created_at"],
         "events": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at"],
         "alarms": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at"],
-        "reports": ["id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "created_at"],
+        "reports": ["id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "language", "generator", "created_at"],
     }[dataset]

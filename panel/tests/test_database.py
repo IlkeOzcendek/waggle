@@ -58,11 +58,15 @@ class EventStoreTest(unittest.TestCase):
             summary="Kovanlar için haftalık örnek değerlendirme raporu.",
             recommendations=["H3 kovanını kontrol edin."],
             hive_ids=["H1", "H3"],
+            language="en",
+            generator="foundry-local:phi-3.5-mini",
         )
         created = self.store.add_report(report)
         saved = self.store.reports()[0]
         self.assertEqual(saved.id, created.id)
         self.assertEqual(saved.hive_ids, ["H1", "H3"])
+        self.assertEqual(saved.language, "en")
+        self.assertEqual(saved.generator, "foundry-local:phi-3.5-mini")
 
     def test_add_hive_and_receive_its_event(self):
         hive = self.store.add_hive(HiveCreate(name="Arka Bahçe Kovanı", location="Gölbaşı"))
@@ -171,6 +175,7 @@ class EventStoreTest(unittest.TestCase):
         self.assertEqual(defaults["panel_name"], "Waggle")
         self.assertEqual(defaults["alarm_threshold"], .85)
         self.assertFalse(defaults["weather_enabled"])
+        self.assertEqual(defaults["language"], "tr")
         saved = self.store.update_settings({
             "panel_name": "Arılığım",
             "location_name": "Ankara",
@@ -179,11 +184,13 @@ class EventStoreTest(unittest.TestCase):
             "refresh_seconds": 10,
             "onboarding_completed": True,
             "weather_enabled": True,
+            "language": "en",
         })
         self.assertEqual(saved["panel_name"], "Arılığım")
         self.assertFalse(saved["sound_enabled"])
         self.assertTrue(saved["onboarding_completed"])
         self.assertTrue(saved["weather_enabled"])
+        self.assertEqual(saved["language"], "en")
         self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), status="ALARM", anomaly_fraction=.90))
         self.assertEqual(self.store.summaries()[0].durum, "kritik")
 

@@ -36,7 +36,7 @@ def wait_for_server(base_url: str, process: subprocess.Popen, timeout: int = 20)
     raise RuntimeError("Panel zamanında hazır olmadı")
 
 
-def seed_demo(base_url: str, device_key: str) -> None:
+def seed_demo(base_url: str, device_key: str, include_report: bool = True) -> None:
     headers = {"X-Device-Key": device_key}
     now = datetime.now(timezone.utc).replace(microsecond=0)
     scenarios = [
@@ -58,6 +58,8 @@ def seed_demo(base_url: str, device_key: str) -> None:
         )
         response.raise_for_status()
 
+    if not include_report:
+        return
     report = {
         "period_start": (now - timedelta(days=7)).isoformat(),
         "period_end": now.isoformat(),
@@ -68,6 +70,8 @@ def seed_demo(base_url: str, device_key: str) -> None:
             "H1 için rutin takibe devam edin.",
         ],
         "hive_ids": ["H1", "H2", "H3"],
+        "language": "tr",
+        "generator": "deterministic-demo",
     }
     response = requests.post(
         f"{base_url}/api/reports", json=report, headers=headers, timeout=5
@@ -79,6 +83,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Waggle yerel demosunu tek komutla başlat")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--no-seed", action="store_true", help="Örnek veri gönderme")
+    parser.add_argument(
+        "--foundry",
+        action="store_true",
+        help="Sahte rapor yerine Phi ile Türkçe ve İngilizce rapor üret",
+    )
     parser.add_argument(
         "--lan",
         action="store_true",
@@ -103,7 +112,18 @@ def main() -> int:
     try:
         wait_for_server(base_url, process)
         if not args.no_seed:
-            seed_demo(base_url, device_key)
+            seed_demo(base_url, device_key, include_report=not args.foundry)
+            if args.foundry:
+                for language in ("tr", "en"):
+                    subprocess.run(
+                        [
+                            sys.executable, "-m", "brain.foundry_report",
+                            "--language", language,
+                            "--panel-url", f"{base_url}/api/reports",
+                            "--device-key", device_key,
+                        ],
+                        check=True,
+                    )
         print("\n🐝 Waggle demo hazır")
         print(f"Panel: {base_url}")
         print("Kullanıcı adı: admin")
