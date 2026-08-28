@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Waggle | Kovan İzleme</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">EDGE AI KOVAN İZLEME</p>
+      <h1>Waggle</h1>
+      <p class="tagline">Kovanları dinleyen yapay zekâ</p>
+    </div>
+    <div class="connection"><span></span> Sistem bağlı</div>
+  </header>
+
+  <main>
+    <section>
+      <div class="section-title">
+        <div><p class="eyebrow">CANLI DURUM</p><h2>Kovanlar</h2></div>
+        <div class="live-actions"><p id="updated">Veri bekleniyor…</p><button id="demo-button" class="primary-button" type="button">Demo senaryosunu başlat</button></div>
+      </div>
+      <div id="hives" class="hive-grid"></div>
+    </section>
+
+    <section class="context-grid">
+      <article class="weather-card">
+        <p class="eyebrow">SAHA BAĞLAMI</p>
+        <div class="weather-main"><div><h2>Hava durumu</h2><p id="weather-location">Yükleniyor…</p></div><strong id="weather-temp">—</strong></div>
+        <div id="weather-details" class="weather-details"><span>Nem —</span><span>Rüzgâr —</span></div>
+      </article>
+      <article class="report-card">
+        <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Değerlendirme</h2></div><select id="report-select" aria-label="Rapor geçmişi"><option value="">Rapor yok</option></select></div>
+        <span id="report-period" class="report-period"></span>
+        <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
+        <ul id="report-actions" class="report-actions"></ul>
+      </article>
+    </section>
+
+    <section class="chart-section">
+      <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Model güveni</h2></div><div class="chart-legend"><span class="h1-dot">H1</span><span class="h2-dot">H2</span><span class="h3-dot">H3</span></div></div>
+      <div class="chart-card"><svg id="confidence-chart" viewBox="0 0 900 220" role="img" aria-label="Kovan güven değerleri grafiği"></svg></div>
+    </section>
+
+    <section class="feed-section">
+      <div class="section-title">
+        <div><p class="eyebrow">TELEMETRİ</p><h2>Olay akışı</h2></div>
+        <div class="feed-actions">
+          <label>Kovan <select id="hive-filter"><option value="all">Tümü</option><option>H1</option><option>H2</option><option>H3</option></select></label>
+          <label>Olay <select id="event-filter"><option value="all">Tümü</option><option value="healthy">Normal</option><option value="uncertain">Belirsiz</option><option value="queenless_suspected">Kritik</option></select></label>
+          <button id="sound-toggle" type="button">Sesli alarm: açık</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th><th>İşlem</th></tr></thead>
+          <tbody id="events"><tr><td colspan="5">Henüz olay yok.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
+  <script src="/static/panel.js?v=7"></script>
+</body>
+</html>
