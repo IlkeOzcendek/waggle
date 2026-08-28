@@ -10,8 +10,6 @@ import argparse # taking value using the terminal
 import json
 import os
 import sys
-import joblib
-
 import numpy as np
 
 from scipy.io import wavfile
@@ -24,6 +22,10 @@ sys.path.insert(0, str(LOCAL_PYAUDIO))
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/waggle_matplotlib")
 
 from pyAudioAnalysis import ShortTermFeatures  # noqa: E402
+try:  # supports both `python ear/...` and package imports in tests
+    from .model_runtime import anomaly_flags, load_monitor  # type: ignore
+except ImportError:
+    from model_runtime import anomaly_flags, load_monitor  # noqa: E402
 
 def arguments(): # It retrieves the necessary information from the terminal to analyze a single WAV file using the trained model
     parser = argparse.ArgumentParser(description = __doc__)
@@ -132,14 +134,14 @@ def save_state(path, state):
 def main():
     args = arguments()
 
-    artifact = joblib.load(args.model)
+    artifact = load_monitor(args.model)
 
     values, names = wav_features(args.wav)
 
     if names != artifact["feature_columns"]: # features not same then
         raise SystemExit(f" !* Feature schema mismatch:\nextracted={names}\nmodel={artifact['feature_columns']} *! ")
 
-    flags = artifact["model"].predict(artifact["scaler"].transform(values)) == -1
+    flags = anomaly_flags(artifact, values)
 
     state = load_state(args.state, artifact)
 
