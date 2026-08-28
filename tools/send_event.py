@@ -72,22 +72,40 @@ def queue_event(path: Path, event: dict) -> None:
     write_queue(path, pending)
 
 
+def deliver_event(
+    event: dict,
+    url: str = DEFAULT_URL,
+    device_key: str = DEFAULT_KEY,
+    queue_path: Path = DEFAULT_QUEUE,
+) -> bool:
+    """Flush queued records, then send or durably queue one model event."""
+    flush_queue(url, device_key, queue_path)
+    if post_event(url, device_key, event):
+        return True
+    queue_event(queue_path, event)
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Waggle model olayını panele gönder")
     parser.add_argument("--hive", required=True, help="Kovan kimliği, örn. H4")
     parser.add_argument(
-        "--event",
+        "--status",
         required=True,
-        choices=("healthy", "uncertain", "queenless_suspected"),
+        choices=("NORMAL", "WATCH", "ALARM"),
     )
-    parser.add_argument("--confidence", required=True, type=float)
+    parser.add_argument("--anomaly-fraction", required=True, type=float)
+    parser.add_argument("--consecutive-anomalies", type=int, default=0)
+    parser.add_argument("--source-file")
     parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--device-key", default=DEFAULT_KEY)
     parser.add_argument("--queue", type=Path, default=DEFAULT_QUEUE)
     args = parser.parse_args()
 
-    if not 0 <= args.confidence <= 1:
-        parser.error("--confidence 0 ile 1 arasında olmalı")
+    if not 0 <= args.anomaly_fraction <= 1:
+        parser.error("--anomaly-fraction 0 ile 1 arasında olmalı")
+    if args.consecutive_anomalies < 0:
+        parser.error("--consecutive-anomalies negatif olamaz")
 
     flushed = flush_queue(args.url, args.device_key, args.queue)
     if flushed:
@@ -96,11 +114,16 @@ def main() -> int:
     event = {
         "hive_id": args.hive,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "event": args.event,
-        "confidence": args.confidence,
+        "status": args.status,
+        "anomaly_fraction": args.anomaly_fraction,
+        "consecutive_anomalies": args.consecutive_anomalies,
+        "source_file": args.source_file,
     }
     if post_event(args.url, args.device_key, event):
-        print(f"Olay gönderildi: {args.hive} / {args.event} / {args.confidence:.2f}")
+        print(
+            f"Olay gönderildi: {args.hive} / {args.status} / "
+            f"anomaly_fraction={args.anomaly_fraction:.2f}"
+        )
         return 0
 
     queue_event(args.queue, event)

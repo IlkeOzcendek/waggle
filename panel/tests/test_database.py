@@ -20,11 +20,18 @@ class EventStoreTest(unittest.TestCase):
         event = HiveEventIn(
             hive_id="H3",
             timestamp=datetime.now(timezone.utc),
-            event="queenless_suspected",
-            confidence=.87,
+            status="ALARM",
+            anomaly_fraction=.87,
+            consecutive_anomalies=30,
+            source_file="queen_loss_sample.wav",
         )
         created = self.store.add(event)
-        self.assertEqual(self.store.recent()[0].id, created.id)
+        saved = self.store.recent()[0]
+        self.assertEqual(saved.id, created.id)
+        self.assertEqual(saved.status, "ALARM")
+        self.assertEqual(saved.anomaly_fraction, .87)
+        self.assertEqual(saved.consecutive_anomalies, 30)
+        self.assertEqual(saved.source_file, "queen_loss_sample.wav")
         self.assertEqual(self.store.summaries()[2].durum, "kritik")
 
     def test_empty_hives_have_no_data_status(self):
@@ -35,8 +42,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H3",
                 timestamp=datetime.now(timezone.utc),
-                event="queenless_suspected",
-                confidence=.91,
+                status="ALARM",
+                anomaly_fraction=.91,
             )
         )
         acknowledged = self.store.acknowledge(created.id)
@@ -65,8 +72,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H4",
                 timestamp=datetime.now(timezone.utc),
-                event="healthy",
-                confidence=.94,
+                status="NORMAL",
+                anomaly_fraction=.06,
             )
         )
         summary = self.store.summaries()[3]
@@ -91,8 +98,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H2",
                 timestamp=datetime.now(timezone.utc),
-                event="uncertain",
-                confidence=.67,
+                status="WATCH",
+                anomaly_fraction=.67,
             )
         )
         backup_path = Path(self.tempdir.name) / "backup.db"
@@ -101,8 +108,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H1",
                 timestamp=datetime.now(timezone.utc),
-                event="healthy",
-                confidence=.95,
+                status="NORMAL",
+                anomaly_fraction=.05,
             )
         )
         backup_store = EventStore(backup_path)
@@ -115,8 +122,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H2",
                 timestamp=datetime.now(timezone.utc),
-                event="uncertain",
-                confidence=.67,
+                status="WATCH",
+                anomaly_fraction=.67,
             )
         )
         backup_path = Path(self.tempdir.name) / "restore.db"
@@ -125,8 +132,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H1",
                 timestamp=datetime.now(timezone.utc),
-                event="healthy",
-                confidence=.95,
+                status="NORMAL",
+                anomaly_fraction=.05,
             )
         )
         self.store.restore_from(backup_path)
@@ -139,8 +146,8 @@ class EventStoreTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H1",
                 timestamp=datetime.now(timezone.utc),
-                event="healthy",
-                confidence=.95,
+                status="NORMAL",
+                anomaly_fraction=.05,
             )
         )
         invalid_path = Path(self.tempdir.name) / "invalid.db"
@@ -154,12 +161,12 @@ class EventStoreTest(unittest.TestCase):
         self.assertEqual(empty["integrity"], "ok")
         self.assertEqual(empty["counts"], {"hives": 3, "events": 0, "reports": 0})
         self.assertIsNone(empty["last_event_at"])
-        self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), event="healthy", confidence=.96))
+        self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), status="NORMAL", anomaly_fraction=.04))
         current = self.store.diagnostics()
         self.assertEqual(current["counts"]["events"], 1)
         self.assertIsNotNone(current["last_event_at"])
 
-    def test_settings_are_persistent_and_control_alarm_threshold(self):
+    def test_settings_are_persistent(self):
         defaults = self.store.settings()
         self.assertEqual(defaults["panel_name"], "Waggle")
         self.assertEqual(defaults["alarm_threshold"], .85)
@@ -177,9 +184,8 @@ class EventStoreTest(unittest.TestCase):
         self.assertFalse(saved["sound_enabled"])
         self.assertTrue(saved["onboarding_completed"])
         self.assertTrue(saved["weather_enabled"])
-        self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), event="queenless_suspected", confidence=.90))
-        self.assertEqual(self.store.summaries(saved["alarm_threshold"])[0].durum, "uyari")
-        self.assertEqual(self.store.summaries(.89)[0].durum, "kritik")
+        self.store.add(HiveEventIn(hive_id="H1", timestamp=datetime.now(timezone.utc), status="ALARM", anomaly_fraction=.90))
+        self.assertEqual(self.store.summaries()[0].durum, "kritik")
 
 
 if __name__ == "__main__":

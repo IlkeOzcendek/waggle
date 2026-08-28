@@ -6,14 +6,16 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-EventType = Literal["healthy", "queenless_suspected", "uncertain"]
+EventStatus = Literal["NORMAL", "WATCH", "ALARM"]
 
 
 class HiveEventIn(BaseModel):
     hive_id: str = Field(pattern=r"^H[1-9][0-9]{0,2}$", examples=["H3"])
     timestamp: datetime
-    event: EventType
-    confidence: float = Field(ge=0, le=1)
+    status: EventStatus
+    anomaly_fraction: float = Field(ge=0, le=1)
+    consecutive_anomalies: int = Field(default=0, ge=0)
+    source_file: str | None = Field(default=None, max_length=255)
 
 
 class HiveEvent(HiveEventIn):
@@ -27,8 +29,8 @@ class HiveSummary(BaseModel):
     name: str
     location: str | None = None
     durum: Literal["normal", "uyari", "kritik", "veri_yok"]
-    last_event: EventType | None
-    confidence: float | None
+    last_status: EventStatus | None
+    anomaly_fraction: float | None
     timestamp: datetime | None
 
 

@@ -21,15 +21,17 @@ def export_rows(store: EventStore, dataset: Dataset) -> list[dict]:
     if dataset in {"events", "alarms"}:
         events = store.recent(1_000_000)
         if dataset == "alarms":
-            events = [event for event in events if event.event == "queenless_suspected"]
+            events = [event for event in events if event.status == "ALARM"]
         return [
             {
                 "id": event.id,
                 "hive_id": event.hive_id,
                 "hive_name": hive_names.get(event.hive_id, "Bilinmeyen kovan"),
                 "timestamp": event.timestamp.isoformat(),
-                "event": event.event,
-                "confidence": event.confidence,
+                "status": event.status,
+                "anomaly_fraction": event.anomaly_fraction,
+                "consecutive_anomalies": event.consecutive_anomalies,
+                "source_file": event.source_file,
                 "received_at": event.alindi.isoformat(),
                 "acknowledged_at": event.acknowledged_at.isoformat() if event.acknowledged_at else None,
             }
@@ -75,7 +77,7 @@ def build_export(store: EventStore, dataset: Dataset, file_format: FileFormat) -
 def _empty_fieldnames(dataset: Dataset) -> list[str]:
     return {
         "hives": ["hive_id", "name", "location", "active", "created_at"],
-        "events": ["id", "hive_id", "hive_name", "timestamp", "event", "confidence", "received_at", "acknowledged_at"],
-        "alarms": ["id", "hive_id", "hive_name", "timestamp", "event", "confidence", "received_at", "acknowledged_at"],
+        "events": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at"],
+        "alarms": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at"],
         "reports": ["id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "created_at"],
     }[dataset]

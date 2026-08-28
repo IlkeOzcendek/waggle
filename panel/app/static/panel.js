@@ -11,7 +11,6 @@ const managedHives = document.querySelector("#managed-hives");
 const alarmsList = document.querySelector("#alarms-list");
 const alarmFilter = document.querySelector("#alarm-filter");
 let soundEnabled = true;
-let alarmThreshold = .85;
 let refreshSeconds = 5;
 let refreshTimer = null;
 let currentSettings = null;
@@ -119,8 +118,8 @@ function render(data) {
   hivesEl.innerHTML = data.hives.map(hive => `
     <article class="hive-card" style="--status:${colors[hive.durum]}">
       <div class="hive-head"><span class="hive-name">${escapeHtml(hive.name)}<small>${hive.hive_id}${hive.location ? ` · ${escapeHtml(hive.location)}` : ""}</small></span><span class="badge">${labels[hive.durum]}</span></div>
-      <div class="confidence">${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</div>
-      <div class="confidence-label">model güveni</div>
+      <div class="confidence">${hive.anomaly_fraction == null ? "—" : Math.round(hive.anomaly_fraction * 100) + "%"}</div>
+      <div class="confidence-label">aykırı ses penceresi</div>
       <div class="event-time">${dateLabel(hive.timestamp)}</div>
       <button class="hive-detail-button" data-hive-detail="${hive.hive_id}" type="button">Detayları gör <span>→</span></button>
     </article>`).join("");
@@ -128,10 +127,10 @@ function render(data) {
   if (selectedHiveId) renderHiveDetail();
   updatedEl.textContent = `Son güncelleme ${dateLabel(data.generated_at)}`;
 
-  const critical = data.events.find(event => event.event === "queenless_suspected" && event.confidence >= alarmThreshold);
+  const critical = data.events.find(event => event.status === "ALARM");
   if (critical && critical.id !== lastCriticalId) {
     lastCriticalId = critical.id;
-    alertEl.textContent = `${hiveLabel(critical.hive_id)}: Ana arı kaybı şüphesi (${Math.round(critical.confidence * 100)}%)`;
+    alertEl.textContent = `${hiveLabel(critical.hive_id)}: Kalıcı akustik değişim — kovanı ve kraliçeyi kontrol edin`;
     alertEl.classList.add("show"); beep();
     setTimeout(() => alertEl.classList.remove("show"), 5500);
   }
@@ -140,13 +139,13 @@ function render(data) {
 function renderEvents() {
   const filtered = latestEvents.filter(event =>
     (!selectedHiveId || event.hive_id === selectedHiveId) &&
-    (eventFilter.value === "all" || event.event === eventFilter.value)
+    (eventFilter.value === "all" || event.status === eventFilter.value)
   );
   eventsEl.innerHTML = filtered.length ? filtered.map(event => `
     <tr><td>${dateLabel(event.timestamp)}</td><td>${hiveLabel(event.hive_id)}</td>
-    <td class="${event.event === "queenless_suspected" ? "event-critical" : ""}">${event.event === "queenless_suspected" ? "Ana arı kaybı şüphesi" : event.event === "uncertain" ? "Belirsiz" : "Normal"}</td>
-    <td>${Math.round(event.confidence * 100)}%</td>
-    <td>${event.event !== "queenless_suspected" ? "—" : event.acknowledged_at ? '<span class="acknowledged">Kontrol edildi</span>' : `<button class="ack-button" data-ack="${event.id}" type="button">Kontrol edildi olarak işaretle</button>`}</td></tr>`).join("") : '<tr><td colspan="5">Filtreyle eşleşen olay yok.</td></tr>';
+    <td class="${event.status === "ALARM" ? "event-critical" : ""}">${event.status === "ALARM" ? "Alarm" : event.status === "WATCH" ? "İzle" : "Normal"}</td>
+    <td>${Math.round(event.anomaly_fraction * 100)}%</td>
+    <td>${event.status !== "ALARM" ? "—" : event.acknowledged_at ? '<span class="acknowledged">Kontrol edildi</span>' : `<button class="ack-button" data-ack="${event.id}" type="button">Kontrol edildi olarak işaretle</button>`}</td></tr>`).join("") : '<tr><td colspan="5">Filtreyle eşleşen olay yok.</td></tr>';
 }
 
 function renderChart(events) {
@@ -161,7 +160,7 @@ function renderChart(events) {
     if (!values.length) return "";
     const points = values.map((event, index) => {
       const x = values.length === 1 ? 465 : 55 + index * (820 / (values.length - 1));
-      return { x, y: 195 - event.confidence * 170 };
+      return { x, y: 195 - event.anomaly_fraction * 170 };
     });
     const color = hiveColor(hiveId);
     return `<polyline class="chart-line" stroke="${color}" points="${points.map(point => `${point.x},${point.y}`).join(" ")}"/>${points.map(point => `<circle class="chart-point" fill="${color}" cx="${point.x}" cy="${point.y}" r="6"/>`).join("")}`;
@@ -178,7 +177,7 @@ function renderHiveDetail() {
   status.style.setProperty("--status", colors[hive.durum]);
   document.querySelector("#detail-summary").innerHTML = `
     <article><span>Güncel durum</span><strong style="color:${colors[hive.durum]}">${labels[hive.durum]}</strong></article>
-    <article><span>Model güveni</span><strong>${hive.confidence == null ? "—" : Math.round(hive.confidence * 100) + "%"}</strong></article>
+    <article><span>Aykırı ses penceresi</span><strong>${hive.anomaly_fraction == null ? "—" : Math.round(hive.anomaly_fraction * 100) + "%"}</strong></article>
     <article><span>Son sinyal</span><strong>${dateLabel(hive.timestamp)}</strong></article>`;
   document.querySelector("#chart-legend").innerHTML = `<span style="--dot:${hiveColor(hive.hive_id)}">${hiveLabel(hive.hive_id)}</span>`;
   renderChart(latestEvents);
@@ -211,15 +210,12 @@ function showView(viewName, moveFocus = false) {
 function applySettings(settings) {
   currentSettings = settings;
   soundEnabled = settings.sound_enabled;
-  alarmThreshold = settings.alarm_threshold;
   refreshSeconds = settings.refresh_seconds;
   soundButton.textContent = `Sesli alarm: ${soundEnabled ? "açık" : "kapalı"}`;
   document.querySelector("#panel-name").textContent = settings.panel_name;
   document.title = `${settings.panel_name} | Kovan İzleme`;
   document.querySelector("#settings-panel-name").value = settings.panel_name;
   document.querySelector("#settings-location").value = settings.location_name;
-  document.querySelector("#settings-threshold").value = Math.round(settings.alarm_threshold * 100);
-  document.querySelector("#threshold-value").textContent = `%${Math.round(settings.alarm_threshold * 100)}`;
   document.querySelector("#settings-sound").checked = settings.sound_enabled;
   document.querySelector("#settings-weather").checked = settings.weather_enabled;
   document.querySelector("#settings-refresh").value = String(settings.refresh_seconds);
@@ -269,7 +265,7 @@ async function saveSettings(event) {
       body: JSON.stringify({
         panel_name: form.panel_name.value.trim(),
         location_name: form.location_name.value.trim(),
-        alarm_threshold: Number(form.alarm_threshold.value) / 100,
+        alarm_threshold: currentSettings?.alarm_threshold || 0.85,
         sound_enabled: form.sound_enabled.checked,
         refresh_seconds: Number(form.refresh_seconds.value),
         onboarding_completed: currentSettings?.onboarding_completed || false,
@@ -446,7 +442,7 @@ async function acknowledgeEvent(eventId) {
 }
 
 function renderAlarms() {
-  const criticalEvents = alarmEvents.filter(event => event.event === "queenless_suspected");
+  const criticalEvents = alarmEvents.filter(event => event.status === "ALARM");
   const openEvents = criticalEvents.filter(event => !event.acknowledged_at);
   const navCount = document.querySelector("#nav-alarm-count");
   navCount.textContent = openEvents.length;
@@ -461,8 +457,8 @@ function renderAlarms() {
     <article class="alarm-card ${event.acknowledged_at ? "resolved" : "open"}">
       <div class="alarm-icon" aria-hidden="true">${event.acknowledged_at ? "✓" : "!"}</div>
       <div class="alarm-content">
-        <div class="alarm-card-head"><div><strong>${escapeHtml(hiveLabel(event.hive_id))}</strong><span>${dateLabel(event.timestamp)}</span></div><span class="alarm-confidence">%${Math.round(event.confidence * 100)} güven</span></div>
-        <h3>Ana arı kaybı şüphesi</h3>
+        <div class="alarm-card-head"><div><strong>${escapeHtml(hiveLabel(event.hive_id))}</strong><span>${dateLabel(event.timestamp)}</span></div><span class="alarm-confidence">%${Math.round(event.anomaly_fraction * 100)} aykırı ses</span></div>
+        <h3>Kalıcı akustik değişim</h3>
         <p>${event.acknowledged_at ? `Kontrol edildi: ${dateLabel(event.acknowledged_at)}` : "Kovanın fiziksel olarak kontrol edilmesi öneriliyor."}</p>
       </div>
       ${event.acknowledged_at ? '<span class="resolved-label">Kontrol edildi</span>' : `<button class="ack-button alarm-ack-button" data-alarm-ack="${event.id}" type="button">Kontrol edildi olarak işaretle</button>`}
@@ -551,9 +547,6 @@ alarmsList.addEventListener("click", event => {
 });
 document.querySelector("#refresh-status").addEventListener("click", refreshSystemStatus);
 document.querySelector("#restore-backup").addEventListener("click", restoreBackup);
-document.querySelector("#settings-threshold").addEventListener("input", event => {
-  document.querySelector("#threshold-value").textContent = `%${event.target.value}`;
-});
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
 document.querySelector("#reopen-guide").addEventListener("click", openGuide);
 document.querySelector("#close-guide").addEventListener("click", closeGuide);

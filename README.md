@@ -225,8 +225,9 @@ than declaring queen death as a certainty.
 The authenticated **Sistem Durumu** page shows database integrity, stored record counts,
 and the latest device/model and report integration activity in user-friendly language.
 
-Panel name, location, critical alarm threshold, alert sound, and refresh interval can be
-changed from the authenticated **Ayarlar** page and are stored persistently in SQLite.
+Panel name, location, alert sound, and refresh interval can be changed from the
+authenticated **Ayarlar** page and are stored persistently in SQLite. The acoustic
+monitor—not the panel—determines `NORMAL`, `WATCH`, and `ALARM` states.
 
 The system status screen marks device/model activity as delayed when no new event
 arrives for 15 minutes, and weekly reports as stale after eight days. These
@@ -295,12 +296,28 @@ Send a model result from another terminal:
 
 ```bash
 export WAGGLE_DEVICE_KEY="replace-with-a-long-random-key"
-python tools/send_event.py --hive H4 --event queenless_suspected --confidence 0.91
+python tools/send_event.py --hive H4 --status ALARM \
+  --anomaly-fraction 1.0 --consecutive-anomalies 30 \
+  --source-file queen_loss_sample.wav
 ```
 
 The client retries temporary failures and stores unsent events in
 `.waggle_pending_events.jsonl`. On the next run it sends queued events first.
 For local demos, both sides default to `waggle-device-demo`.
+
+To send real folder-monitor results directly to the panel, run:
+
+```bash
+python ear/monitor_wav_folder.py \
+  results/HIVE03_isolation.joblib inbox \
+  --state events/HIVE03_state.json \
+  --log events/HIVE03_events.csv \
+  --panel-url http://127.0.0.1:8000/api/events \
+  --panel-hive H3 --watch --poll-seconds 5
+```
+
+If the panel is temporarily unavailable, these model events use the same local
+retry queue and are delivered when connectivity returns.
 
 Open <http://127.0.0.1:8000>. In a second terminal, activate the same
 environment and start the simulated event stream:
@@ -322,7 +339,7 @@ are sent to Open-Meteo and cached for ten minutes. `WAGGLE_LOCATION` controls
 the user-facing label; weather failure never blocks hive monitoring.
 
 The dashboard includes a one-click demo scenario, client-side hive/event
-filters, and a dependency-free SVG confidence chart. The demo endpoint and
+filters, and a dependency-free acoustic-change chart. The demo endpoint and
 fake-event tools are intended for local presentation use only.
 
 Critical events can be acknowledged from the event table, and recent weekly

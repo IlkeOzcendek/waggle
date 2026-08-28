@@ -60,21 +60,21 @@
         <div id="detail-summary" class="detail-summary"></div>
       </section>
       <section class="chart-section">
-        <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Model güveni</h2></div><div id="chart-legend" class="chart-legend"></div></div>
-        <div class="chart-card"><svg id="confidence-chart" viewBox="0 0 900 220" role="img" aria-label="Seçili kovanın güven değerleri grafiği"></svg></div>
+        <div class="section-title"><div><p class="eyebrow">EĞİLİM</p><h2>Akustik değişim oranı</h2></div><div id="chart-legend" class="chart-legend"></div></div>
+        <div class="chart-card"><svg id="confidence-chart" viewBox="0 0 900 220" role="img" aria-label="Seçili kovandaki aykırı ses pencerelerinin oranı"></svg></div>
       </section>
       <section class="feed-section">
         <div class="section-title">
           <div><p class="eyebrow">TELEMETRİ</p><h2>Son olaylar</h2></div>
           <div class="feed-actions">
-            <label>Olay <select id="event-filter"><option value="all">Tümü</option><option value="healthy">Normal</option><option value="uncertain">Belirsiz</option><option value="queenless_suspected">Kritik</option></select></label>
+            <label>Durum <select id="event-filter"><option value="all">Tümü</option><option value="NORMAL">Normal</option><option value="WATCH">İzle</option><option value="ALARM">Alarm</option></select></label>
             <button id="sound-toggle" type="button">Sesli alarm: açık</button>
           </div>
         </div>
         <div class="table-wrap">
           <table>
             <caption class="visually-hidden">Seçili kovanın son yapay zekâ olayları</caption>
-            <thead><tr><th>Zaman</th><th>Kovan</th><th>Olay</th><th>Güven</th><th>İşlem</th></tr></thead>
+            <thead><tr><th>Zaman</th><th>Kovan</th><th>Durum</th><th>Aykırı ses</th><th>İşlem</th></tr></thead>
             <tbody id="events"><tr><td colspan="5">Henüz olay yok.</td></tr></tbody>
           </table>
         </div>
@@ -124,7 +124,7 @@
         <p class="management-intro">Kayıtları Excel için CSV veya sistem entegrasyonları için JSON biçiminde indirin.</p>
         <div class="export-grid">
           <article><div><span class="export-icon">♜</span><h3>Kovanlar</h3><p>Aktif ve arşivlenmiş bütün kovanların adları, konumları ve teknik kimlikleri.</p></div><div><a href="/api/export/hives.csv" download>CSV indir</a><a href="/api/export/hives.json" download>JSON indir</a></div></article>
-          <article><div><span class="export-icon">↗</span><h3>Tüm olaylar</h3><p>Model sonuçları, güven değerleri, zamanlar ve kovan bilgileri.</p></div><div><a href="/api/export/events.csv" download>CSV indir</a><a href="/api/export/events.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon">↗</span><h3>Tüm olaylar</h3><p>Model durumları, akustik değişim oranları, zamanlar ve kovan bilgileri.</p></div><div><a href="/api/export/events.csv" download>CSV indir</a><a href="/api/export/events.json" download>JSON indir</a></div></article>
           <article><div><span class="export-icon">!</span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
           <article><div><span class="export-icon">≡</span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
           <article class="backup-card"><div><span class="export-icon">↓</span><h3>Tam veritabanı yedeği</h3><p>Kovanlar, olaylar, alarm durumları ve raporları içeren tutarlı SQLite yedeğini indirin. Bu dosyayı güvenli bir yerde saklayın.</p></div><div><a href="/api/backup/database" download>SQLite yedeğini indir</a></div></article>
@@ -157,8 +157,7 @@
             <label for="settings-location">Kovanlık konumu<input id="settings-location" name="location_name" required minlength="2" maxlength="100"></label>
           </article>
           <article>
-            <div><h3>Alarm davranışı</h3><p>Model güveni bu değere ulaştığında olay kritik alarm kabul edilir.</p></div>
-            <label for="settings-threshold">Kritik alarm eşiği <strong id="threshold-value">%85</strong><input id="settings-threshold" name="alarm_threshold" type="range" min="50" max="99" step="1" value="85"></label>
+            <div><h3>Alarm davranışı</h3><p>Alarm eşiği kovana özel akustik model tarafından belirlenir; panel bu kararı değiştirmez.</p></div>
             <label class="switch-row" for="settings-sound"><span><strong>Sesli alarm</strong><small>Kritik olay geldiğinde uyarı sesi çal.</small></span><input id="settings-sound" name="sound_enabled" type="checkbox"></label>
           </article>
           <article>

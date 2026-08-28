@@ -252,8 +252,7 @@ def acknowledge_event(event_id: int) -> HiveEvent:
 
 @app.get("/api/dashboard", response_model=DashboardState)
 def dashboard() -> DashboardState:
-    settings = AppSettings(**store.settings())
-    return DashboardState(hives=store.summaries(settings.alarm_threshold), events=store.recent(30))
+    return DashboardState(hives=store.summaries(), events=store.recent(30))
 
 
 @app.get("/api/settings", response_model=AppSettings)
@@ -434,8 +433,8 @@ def weather() -> WeatherState:
 def demo_scenario() -> list[HiveEvent]:
     timestamp = datetime.now().astimezone().replace(microsecond=0)
     scenario = [
-        HiveEventIn(hive_id="H1", timestamp=timestamp, event="healthy", confidence=0.93),
-        HiveEventIn(hive_id="H2", timestamp=timestamp, event="uncertain", confidence=0.68),
-        HiveEventIn(hive_id="H3", timestamp=timestamp, event="queenless_suspected", confidence=0.91),
+        HiveEventIn(hive_id="H1", timestamp=timestamp, status="NORMAL", anomaly_fraction=0.08),
+        HiveEventIn(hive_id="H2", timestamp=timestamp, status="WATCH", anomaly_fraction=0.68, consecutive_anomalies=5),
+        HiveEventIn(hive_id="H3", timestamp=timestamp, status="ALARM", anomaly_fraction=1.0, consecutive_anomalies=30),
     ]
     return [store.add(event) for event in scenario]

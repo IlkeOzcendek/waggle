@@ -40,16 +40,18 @@ def seed_demo(base_url: str, device_key: str) -> None:
     headers = {"X-Device-Key": device_key}
     now = datetime.now(timezone.utc).replace(microsecond=0)
     scenarios = [
-        ("H1", "healthy", .92),
-        ("H2", "uncertain", .66),
-        ("H3", "queenless_suspected", .91),
+        ("H1", "NORMAL", .08, 0),
+        ("H2", "WATCH", .66, 5),
+        ("H3", "ALARM", 1.0, 30),
     ]
-    for hive_id, event_type, confidence in scenarios:
+    for hive_id, status, anomaly_fraction, consecutive_anomalies in scenarios:
         payload = {
             "hive_id": hive_id,
             "timestamp": now.isoformat(),
-            "event": event_type,
-            "confidence": confidence,
+            "status": status,
+            "anomaly_fraction": anomaly_fraction,
+            "consecutive_anomalies": consecutive_anomalies,
+            "source_file": "demo.wav",
         }
         response = requests.post(
             f"{base_url}/api/events", json=payload, headers=headers, timeout=5
@@ -59,7 +61,7 @@ def seed_demo(base_url: str, device_key: str) -> None:
     report = {
         "period_start": (now - timedelta(days=7)).isoformat(),
         "period_end": now.isoformat(),
-        "summary": "H1 düzenli görünüyor. H2 için ek dinleme öneriliyor. H3'te yüksek güvenli ana arı kaybı şüphesi tespit edildi.",
+        "summary": "H1 düzenli görünüyor. H2 izleme durumunda. H3'te kalıcı akustik değişim alarmı oluştu.",
         "recommendations": [
             "H3 kovanını 24 saat içinde fiziksel olarak kontrol edin.",
             "H2 için yeni bir ses kaydı alın.",

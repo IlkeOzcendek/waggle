@@ -13,12 +13,20 @@ from datetime import datetime, timezone
 
 import hashlib
 import json
+import os
+import sys
 import time
 
 import joblib
 import numpy as np
 
 from wav_isolation_monitor import update_run, wav_features
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.send_event import deliver_event  # noqa: E402
 
 LOG_FIELDS = [
     "processed_at_utc", "hive_id", "wav", "sha256", "windows",
@@ -35,6 +43,17 @@ def arguments(): # follow the WAV files using the trained model
     parser.add_argument("--watch", action = "store_true", help = "Keep polling for new WAV files")
 
     parser.add_argument("--poll-seconds", type = float, default = 5.0)
+    parser.add_argument("--panel-url", help="Panel /api/events address")
+    parser.add_argument("--panel-hive", help="Panel hive id, for example H3")
+    parser.add_argument(
+        "--device-key",
+        default=os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo"),
+    )
+    parser.add_argument(
+        "--panel-queue",
+        type=Path,
+        default=Path(".waggle_pending_events.jsonl"),
+    )
 
     return parser.parse_args()
 
@@ -83,7 +102,16 @@ def append_log(path, row): # It adds the result of an operation as a new line to
 
         writer.writerow(row)
 
-def scan(artifact, folder, state_path, log_path): # It scans .wav files in a folder, performs anomaly checks using the trained model and records the results in a state file and a CSV log
+def scan(
+    artifact,
+    folder,
+    state_path,
+    log_path,
+    panel_url=None,
+    panel_hive=None,
+    device_key="waggle-device-demo",
+    panel_queue=Path(".waggle_pending_events.jsonl"),
+): # It scans .wav files in a folder, performs anomaly checks using the trained model and records the results in a state file and a CSV log
 
     # artifact -> the model package we saved earlier
     # folder -> the folder containing the WAV files
@@ -129,13 +157,30 @@ def scan(artifact, folder, state_path, log_path): # It scans .wav files in a fol
 
         save_json_atomic(state_path, state)
 
-        append_log(log_path, {
-            "processed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        processed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        row = {
+            "processed_at_utc": processed_at,
             "hive_id": hive_id, "wav": path.name, "sha256": checksum,
             "windows": len(flags), "anomaly_fraction": f"{flags.mean():.6f}",
             "initial_run": initial, "final_run": final, "maximum_run": maximum,
             "status": status,
-        })
+        }
+        append_log(log_path, row)
+
+        if panel_url:
+            event = {
+                "hive_id": panel_hive or hive_id,
+                "timestamp": processed_at,
+                "status": status,
+                "anomaly_fraction": float(flags.mean()),
+                "consecutive_anomalies": final,
+                "source_file": path.name,
+            }
+            delivered = deliver_event(event, panel_url, device_key, panel_queue)
+            print(
+                "panel=" + ("sent" if delivered else f"queued:{panel_queue}"),
+                flush=True,
+            )
 
         processed.add(file_key)
 
@@ -156,7 +201,16 @@ def main():
     artifact = joblib.load(args.model)
 
     while True:
-        count = scan(artifact, args.folder, args.state, args.log)
+        count = scan(
+            artifact,
+            args.folder,
+            args.state,
+            args.log,
+            args.panel_url,
+            args.panel_hive,
+            args.device_key,
+            args.panel_queue,
+        )
 
         if not args.watch:
             print(f"new_files = {count}")

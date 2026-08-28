@@ -21,8 +21,8 @@ class DemoToolsTest(unittest.TestCase):
         self.assertEqual(post.call_count, 4)
         event_calls = post.call_args_list[:3]
         self.assertEqual(
-            [call.kwargs["json"]["event"] for call in event_calls],
-            ["healthy", "uncertain", "queenless_suspected"],
+            [call.kwargs["json"]["status"] for call in event_calls],
+            ["NORMAL", "WATCH", "ALARM"],
         )
         self.assertTrue(
             all(call.kwargs["headers"] == {"X-Device-Key": "secret-key"} for call in post.call_args_list)

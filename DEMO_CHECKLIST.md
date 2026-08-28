@@ -23,8 +23,8 @@ Open <http://127.0.0.1:8000> and sign in with `admin` / `waggle-demo`.
 ## Presentation flow
 
 1. Show the simple overview and status totals.
-2. Open **Deneme Kovanı (H3)** and explain the 91% queenless suspicion.
-3. Show its confidence chart and event history.
+2. Open **Deneme Kovanı (H3)** and explain its persistent `ALARM` state.
+3. Show its acoustic-change chart and event history.
 4. Open **Alarmlar** and acknowledge the H3 alarm.
 5. Open **Raporlar** and show the weekly AI recommendations.
 6. Open **Kovanlarım** and explain automatic device identifiers.
@@ -37,7 +37,7 @@ Open <http://127.0.0.1:8000> and sign in with `admin` / `waggle-demo`.
 - Core hive monitoring, SQLite storage, alarms, and the local panel do not require internet.
 - Online weather is optional and disabled by default.
 - Enabling weather sends the configured latitude and longitude to Open-Meteo.
-- Model confidence is decision support, not a definitive diagnosis.
+- The anomaly fraction is not a probability; the alarm requests inspection.
 
 ## Recovery
 

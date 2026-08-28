@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp TEXT NOT NULL,
     event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    consecutive_anomalies INTEGER NOT NULL DEFAULT 0,
+    source_file TEXT,
     alindi TEXT NOT NULL,
     acknowledged_at TEXT
 );
@@ -79,6 +81,12 @@ class EventStore:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(events)")}
             if "acknowledged_at" not in columns:
                 connection.execute("ALTER TABLE events ADD COLUMN acknowledged_at TEXT")
+            if "consecutive_anomalies" not in columns:
+                connection.execute(
+                    "ALTER TABLE events ADD COLUMN consecutive_anomalies INTEGER NOT NULL DEFAULT 0"
+                )
+            if "source_file" not in columns:
+                connection.execute("ALTER TABLE events ADD COLUMN source_file TEXT")
             settings_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(settings)")
             }
@@ -122,14 +130,18 @@ class EventStore:
                 timestamp TEXT NOT NULL,
                 event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
                 confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+                consecutive_anomalies INTEGER NOT NULL DEFAULT 0,
+                source_file TEXT,
                 alindi TEXT NOT NULL,
                 acknowledged_at TEXT
             )"""
         )
         connection.execute(
             """INSERT INTO events
-            (id, hive_id, timestamp, event, confidence, alindi, acknowledged_at)
-            SELECT id, hive_id, timestamp, event, confidence, alindi, acknowledged_at
+            (id, hive_id, timestamp, event, confidence, consecutive_anomalies,
+             source_file, alindi, acknowledged_at)
+            SELECT id, hive_id, timestamp, event, confidence, 0, NULL, alindi,
+                   acknowledged_at
             FROM events_legacy"""
         )
         connection.execute("DROP TABLE events_legacy")
@@ -243,14 +255,23 @@ class EventStore:
 
     def add(self, event: HiveEventIn) -> HiveEvent:
         received_at = datetime.now(timezone.utc)
+        legacy_event = {
+            "NORMAL": "healthy",
+            "WATCH": "uncertain",
+            "ALARM": "queenless_suspected",
+        }[event.status]
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO events (hive_id, timestamp, event, confidence, alindi) VALUES (?, ?, ?, ?, ?)",
+                """INSERT INTO events
+                (hive_id, timestamp, event, confidence, consecutive_anomalies,
+                 source_file, alindi) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     event.hive_id,
                     event.timestamp.isoformat(),
-                    event.event,
-                    event.confidence,
+                    legacy_event,
+                    event.anomaly_fraction,
+                    event.consecutive_anomalies,
+                    event.source_file,
                     received_at.isoformat(),
                 ),
             )
@@ -274,7 +295,7 @@ class EventStore:
             row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return self._event(row) if row else None
 
-    def summaries(self, alarm_threshold: float = 0.85) -> list[HiveSummary]:
+    def summaries(self) -> list[HiveSummary]:
         summaries: list[HiveSummary] = []
         with self.connect() as connection:
             hives = connection.execute(
@@ -293,26 +314,26 @@ class EventStore:
                             name=hive["name"],
                             location=hive["location"],
                             durum="veri_yok",
-                            last_event=None,
-                            confidence=None,
+                            last_status=None,
+                            anomaly_fraction=None,
                             timestamp=None,
                         )
                     )
                     continue
                 event = self._event(row)
-                status = "normal"
-                if event.event == "queenless_suspected":
-                    status = "kritik" if event.confidence >= alarm_threshold else "uyari"
-                elif event.event == "uncertain":
-                    status = "uyari"
+                status = {
+                    "NORMAL": "normal",
+                    "WATCH": "uyari",
+                    "ALARM": "kritik",
+                }[event.status]
                 summaries.append(
                     HiveSummary(
                         hive_id=hive_id,
                         name=hive["name"],
                         location=hive["location"],
                         durum=status,
-                        last_event=event.event,
-                        confidence=event.confidence,
+                        last_status=event.status,
+                        anomaly_fraction=event.anomaly_fraction,
                         timestamp=event.timestamp,
                     )
                 )
@@ -395,12 +416,22 @@ class EventStore:
 
     @staticmethod
     def _event(row: sqlite3.Row) -> HiveEvent:
+        status = {
+            "healthy": "NORMAL",
+            "uncertain": "WATCH",
+            "queenless_suspected": "ALARM",
+        }[row["event"]]
         return HiveEvent(
             id=row["id"],
             hive_id=row["hive_id"],
             timestamp=datetime.fromisoformat(row["timestamp"]),
-            event=row["event"],
-            confidence=row["confidence"],
+            status=status,
+            anomaly_fraction=row["confidence"],
+            consecutive_anomalies=(
+                row["consecutive_anomalies"]
+                if "consecutive_anomalies" in row.keys() else 0
+            ),
+            source_file=(row["source_file"] if "source_file" in row.keys() else None),
             alindi=datetime.fromisoformat(row["alindi"]),
             acknowledged_at=(
                 datetime.fromisoformat(row["acknowledged_at"])

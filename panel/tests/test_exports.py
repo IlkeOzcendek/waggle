@@ -21,8 +21,9 @@ class ExportTest(unittest.TestCase):
             HiveEventIn(
                 hive_id="H3",
                 timestamp=now,
-                event="queenless_suspected",
-                confidence=.91,
+                status="ALARM",
+                anomaly_fraction=.91,
+                consecutive_anomalies=30,
             )
         )
         self.store.add_report(
@@ -43,7 +44,8 @@ class ExportTest(unittest.TestCase):
         self.assertTrue(content.startswith(b"\xef\xbb\xbf"))
         rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
         self.assertEqual(rows[0]["hive_name"], "Deneme Kovanı")
-        self.assertEqual(rows[0]["event"], "queenless_suspected")
+        self.assertEqual(rows[0]["status"], "ALARM")
+        self.assertEqual(rows[0]["consecutive_anomalies"], "30")
         self.assertEqual(media_type, "text/csv; charset=utf-8")
         self.assertTrue(filename.endswith(".csv"))
 

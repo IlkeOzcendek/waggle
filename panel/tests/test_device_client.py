@@ -15,20 +15,20 @@ class DeviceClientTest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def test_queue_round_trip(self):
-        event = {"hive_id": "H4", "event": "healthy", "confidence": .92}
+        event = {"hive_id": "H4", "status": "NORMAL", "anomaly_fraction": .08}
         queue_event(self.queue, event)
         self.assertEqual(read_queue(self.queue), [event])
 
     @patch("tools.send_event.post_event", return_value=True)
     def test_flush_removes_sent_events(self, post_event):
-        queue_event(self.queue, {"hive_id": "H4", "event": "healthy", "confidence": .92})
+        queue_event(self.queue, {"hive_id": "H4", "status": "NORMAL", "anomaly_fraction": .08})
         self.assertEqual(flush_queue("http://example.test", "key", self.queue), 1)
         self.assertFalse(self.queue.exists())
         post_event.assert_called_once()
 
     @patch("tools.send_event.post_event", return_value=False)
     def test_flush_keeps_unsent_events(self, _):
-        event = {"hive_id": "H4", "event": "uncertain", "confidence": .55}
+        event = {"hive_id": "H4", "status": "WATCH", "anomaly_fraction": .55}
         queue_event(self.queue, event)
         self.assertEqual(flush_queue("http://example.test", "key", self.queue), 0)
         self.assertEqual(read_queue(self.queue), [event])
