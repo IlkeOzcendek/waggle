@@ -18,6 +18,8 @@ body { margin: 0; background: var(--paper); color: var(--ink); }
 .skip-link:focus { transform: translateY(0); }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 :focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+/* Navigation moves focus here for assistive technology; no keyboard action is attached. */
+h2[tabindex="-1"]:focus { outline: none; }
 header { display: flex; justify-content: space-between; align-items: flex-end; padding: 42px clamp(24px, 7vw, 96px) 30px; border-bottom: 1px solid #ded9cd; }
 h1 { margin: 0; color: #8f3d0c; font-size: clamp(42px, 6vw, 76px); letter-spacing: -.05em; }
 h2 { margin: 2px 0 0; font-size: 27px; }
@@ -33,6 +35,22 @@ main { max-width: 1200px; margin: auto; padding: 38px 24px 80px; }
 .nav-button.active { border-color: #e8c58a; background: var(--amber-soft); color: #8f3d0c; }
 .nav-count { display: inline-grid; min-width: 20px; height: 20px; margin-left: 5px; place-items: center; border-radius: 999px; background: var(--red); color: white; font-size: 11px; }
 section + section { margin-top: 44px; }
+.sensor-local-badge { padding: 7px 11px; border-radius: 999px; background: #dcfce7; color: var(--green); font-size: 12px; font-weight: 800; }
+.sensor-card { display: grid; gap: 18px; margin-top: 24px; padding: clamp(20px, 4vw, 34px); border: 1px solid #ded9cd; border-radius: 22px; background: var(--card); box-shadow: 0 12px 35px rgba(35,42,53,.06); }
+.sensor-step { display: grid; grid-template-columns: 38px 1fr; gap: 14px; align-items: start; }
+.sensor-step > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: var(--amber-soft); color: #8f3d0c; font-weight: 850; }
+.sensor-step > div { display: grid; gap: 8px; }
+.sensor-step label { font-weight: 800; }
+.sensor-step small { color: var(--muted); line-height: 1.5; }
+.sensor-step input[type="file"], .sensor-step select { width: 100%; }
+.sensor-result { display: grid; gap: 7px; padding: 18px; border-radius: 14px; border-left: 5px solid var(--green); background: #f0fdf4; }
+.sensor-result[data-status="watch"] { border-color: var(--yellow); background: #fffbeb; }
+.sensor-result[data-status="alarm"] { border-color: var(--red); background: #fff1f2; }
+.sensor-result[data-status="enrollment"] { border-color: var(--amber); background: #fff8e8; }
+.sensor-result strong { font-size: 18px; }
+.sensor-result span { color: var(--muted); }
+.sensor-note { margin-top: 18px; padding: 16px 18px; border-radius: 14px; background: #fff8e8; color: #71430d; }
+.sensor-note p { margin-top: 5px; line-height: 1.55; }
 .section-title { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 17px; }
 .live-actions, .feed-actions { display: flex; align-items: center; gap: 12px; }
 .primary-button { border-color: var(--amber); background: var(--amber); color: white; font-weight: 750; }
@@ -84,6 +102,22 @@ section + section { margin-top: 44px; }
 .managed-hive-row.archived { background: #f0eee8; opacity: .78; }
 .managed-hive-actions { display: flex; align-items: center; gap: 8px; }
 .managed-hive-actions button { padding: 7px 10px; font-size: 12px; }
+.hive-device-panel { margin-top: 24px; padding: clamp(20px, 4vw, 30px); border: 1px solid #d9cdaf; border-radius: 20px; background: #fffdf8; }
+.hive-device-panel .section-subtitle { margin-bottom: 18px; }
+.hive-device-panel h3 { margin: 2px 0 0; font-size: 24px; }
+.enrollment-status { display: grid; gap: 10px; padding: 18px; border-radius: 14px; background: #f4f1e9; }
+.enrollment-status > div { display: flex; justify-content: space-between; gap: 16px; }
+.enrollment-status progress { width: 100%; height: 10px; accent-color: var(--amber); }
+.enrollment-status p { margin: 0; color: var(--muted); line-height: 1.5; }
+.device-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 14px; align-items: end; margin-top: 18px; }
+.device-form > div { display: grid; gap: 7px; }
+.device-form label { font-weight: 750; }
+.device-form input, .device-form select { width: 100%; }
+.device-form .form-message { grid-column: 1 / -1; }
+.health-confirmation { display: grid; gap: 9px; padding: 16px; border-radius: 12px; background: #fff8e8; color: #71430d; line-height: 1.45; }
+.health-confirmation p { margin: 0; }
+.health-confirmation label { font-weight: 750; }
+.health-confirmation input, .health-confirmation select { width: 100%; }
 .archive-button { color: var(--red); }
 .archived-label { color: var(--muted); font-size: 12px; font-weight: 750; }
 .alarm-summary { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 18px 20px; border-radius: 15px; background: #fff0f0; color: #7f1d1d; }
@@ -203,4 +237,5 @@ select { margin-left: 5px; padding: 8px 27px 8px 10px; border: 1px solid #d5cfc3
 .header-actions > span { font-size: .9rem; font-weight: 700; }
 .header-actions button { border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; padding: 8px 13px; cursor: pointer; }
 .hive-name small { display: block; margin-top: 3px; color: #777165; font-size: .7rem; font-weight: 700; letter-spacing: .08em; }
+@media (max-width: 750px) { .device-form { grid-template-columns: 1fr; } }
 @media (max-width: 750px) { .status-components, .onboarding-steps { grid-template-columns: 1fr; } .settings-form article { grid-template-columns: 1fr; } .settings-actions, .onboarding-actions { align-items: flex-start; flex-direction: column; gap: 12px; } .onboarding-head, .onboarding-steps, .onboarding-actions { padding-left: 20px; padding-right: 20px; } }

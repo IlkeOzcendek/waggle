@@ -188,12 +188,33 @@ python ear/monitor_wav_folder.py \
 Stop continuous monitoring with `Control-C`. Processed filenames and SHA-256
 hashes are retained so unchanged files are not analyzed twice.
 
+### Phone enrollment and monitoring
+
+The authenticated panel places phone capture inside each hive rather than exposing
+it as a generic classifier: **My hives → Devices and model → Add device**. A new
+hive starts in `device_required`, moves to `enrolling`, and accepts audio only as
+confirmed healthy baseline data. Waggle stores the extracted 21-feature windows
+in SQLite and deletes the uploaded raw WAV after processing.
+
+Waggle requests a short field-health check at enrollment start and no more than
+once every four days. Direct queen observation, a healthy egg/brood pattern, or
+a generally healthy inspection can validate the current collection period;
+`unsure` is recorded but never admitted to training. At 42 healthy sessions
+across 14 distinct days and at least four accepted field confirmations, Waggle automatically trains a
+hive-and-microphone-specific `RobustScaler + IsolationForest`, exports it to ONNX,
+and compares every training-window decision between the Python and ONNX models.
+Monitoring is activated only when decision parity is exact. From then on, phone
+recordings enter the normal `NORMAL` / `WATCH` / `ALARM` flow. The packaged H3
+profile remains the pre-enrolled presentation path when prospective field data
+is not available.
+
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
 | `ear/mendeley_streaming_monitor.py` | Reproduce the sudden queen-loss replay |
 | `ear/export_onnx_model.py` | Export and verify the portable ONNX monitor |
+| `ear/profile_training.py` | Train and parity-check a hive-specific ONNX profile |
 | `ear/wav_isolation_monitor.py` | Score a single WAV recording |
 | `ear/build_wav_isolation_profile.py` | Build a hive-specific healthy profile |
 | `ear/monitor_wav_folder.py` | Continuously process incoming WAV files |
@@ -301,7 +322,8 @@ Set `WAGGLE_ENV=production` for a real deployment; startup then fails if the
 default password, device key, session secret, or secure cookie setting is unsafe.
 Sessions expire after eight hours by default.
 
-The panel supports dynamic hive management, alarm acknowledgement, CSV/JSON
+The panel supports dynamic hive and device management, tracked healthy-baseline
+enrollment, automatic per-hive ONNX profile creation, alarm acknowledgement, CSV/JSON
 exports, SQLite backup and restore, system-health monitoring, and authenticated
 local access. The `TR / EN` control switches the interface, date formatting,
 and preferred report language. Development credentials are for local demonstration only.
@@ -312,6 +334,10 @@ Waggle uses the locally cached `phi-3.5-mini` model to select a constrained
 operational priority and approved action codes. The application validates that
 structure and renders the final report from reviewed Turkish or English safety
 text, so the model cannot turn an acoustic alarm into a definitive diagnosis.
+Before inference, a deterministic offline retriever selects the most relevant
+passages from `brain/knowledge/hive_guidance.json`. Retrieved source IDs remain
+attached to the assessment for traceability; no recording or user data is added
+to the knowledge base.
 
 Install Foundry Local and download the model once:
 
@@ -336,6 +362,24 @@ python tools/run_demo.py --foundry
 Foundry Local and Phi run on-device. If the local model is unavailable or its
 structured output fails validation, Waggle uses a deterministic safety fallback
 and records the report generator so the provenance remains visible in SQLite.
+
+Generate both language versions from the latest seven days of panel events with
+the Microsoft Agent Framework weekly-report agent (Python 3.10+):
+
+```bash
+source .venv311/bin/activate
+python -m brain.weekly_agent
+```
+
+For continuous local operation, use `python -m brain.weekly_agent --watch`.
+The default interval is 168 hours and can be changed with `--interval-hours`.
+The agent reads events, retrieves reviewed local guidance, and invokes Phi with
+Microsoft Agent Framework through Foundry Local's OpenAI-compatible local API.
+It stores the Turkish and English reports through the same authenticated API.
+Each successful report records an
+`agent-framework:foundry-local:*` generator value in SQLite. If Agent Framework
+or the local model is unavailable, the same diagnostic-safe deterministic
+fallback remains available and its provenance is recorded instead.
 
 ## Send an event from an edge device
 

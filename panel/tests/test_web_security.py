@@ -1,6 +1,6 @@
 import unittest
 
-from panel.app.main import is_cross_site_request, security_headers
+from panel.app.main import is_cross_site_request, is_device_request, security_headers
 
 
 class WebSecurityTest(unittest.TestCase):
@@ -26,6 +26,12 @@ class WebSecurityTest(unittest.TestCase):
 
     def test_api_docs_keep_their_external_assets_available(self):
         self.assertNotIn("Content-Security-Policy", security_headers("/docs"))
+
+    def test_device_key_scope_is_explicit(self):
+        self.assertTrue(is_device_request("GET", "/api/agent/events"))
+        self.assertTrue(is_device_request("POST", "/api/reports"))
+        self.assertFalse(is_device_request("GET", "/api/events"))
+        self.assertFalse(is_device_request("POST", "/api/hives"))
 
 
 if __name__ == "__main__":

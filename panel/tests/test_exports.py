@@ -33,6 +33,7 @@ class ExportTest(unittest.TestCase):
                 summary="Kovanlar için dışa aktarma test raporu.",
                 recommendations=["H3 kovanını kontrol edin."],
                 hive_ids=["H3"],
+                grounding_sources=["alarm-inspection"],
             )
         )
 
@@ -56,6 +57,7 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(reports[0]["hive_ids"], ["H3"])
         self.assertEqual(reports[0]["language"], "tr")
         self.assertEqual(reports[0]["generator"], "manual")
+        self.assertEqual(reports[0]["grounding_sources"], ["alarm-inspection"])
         self.assertEqual(media_type, "application/json; charset=utf-8")
         self.assertTrue(filename.endswith(".json"))
 

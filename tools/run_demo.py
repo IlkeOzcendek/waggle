@@ -114,16 +114,18 @@ def main() -> int:
         if not args.no_seed:
             seed_demo(base_url, device_key, include_report=not args.foundry)
             if args.foundry:
-                for language in ("tr", "en"):
-                    subprocess.run(
-                        [
-                            sys.executable, "-m", "brain.foundry_report",
-                            "--language", language,
-                            "--panel-url", f"{base_url}/api/reports",
-                            "--device-key", device_key,
-                        ],
-                        check=True,
-                    )
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "brain.weekly_agent",
+                        "--panel-url",
+                        base_url,
+                        "--device-key",
+                        device_key,
+                    ],
+                    check=True,
+                )
         print("\n🐝 Waggle demo hazır")
         print(f"Panel: {base_url}")
         print("Kullanıcı adı: admin")

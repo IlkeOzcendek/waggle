@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 
 EventStatus = Literal["NORMAL", "WATCH", "ALARM"]
+EnrollmentState = Literal["device_required", "enrolling", "ready", "monitoring"]
+DeviceKind = Literal["phone", "sensor", "folder", "demo"]
+HealthEvidence = Literal["queen_seen", "brood_healthy", "hive_healthy", "uncertain"]
+GroundingSource = Annotated[str, Field(min_length=2, max_length=80, pattern=r"^[a-z0-9][a-z0-9._-]*$")]
 
 
 class HiveEventIn(BaseModel):
@@ -22,6 +26,56 @@ class HiveEvent(HiveEventIn):
     id: int
     alindi: datetime
     acknowledged_at: datetime | None = None
+
+
+class SensorAnalysis(BaseModel):
+    mode: Literal["enrollment", "monitoring"]
+    event: HiveEvent | None = None
+    windows: int = Field(ge=1)
+    model: str | None = None
+    note: str
+
+
+class DeviceCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    kind: DeviceKind = "phone"
+
+
+class Device(DeviceCreate):
+    device_id: str
+    hive_id: str
+    active: bool = True
+    created_at: datetime
+    last_seen_at: datetime | None = None
+
+
+class EnrollmentStatus(BaseModel):
+    hive_id: str
+    state: EnrollmentState
+    recording_count: int = Field(ge=0)
+    recording_days: int = Field(ge=0)
+    required_recordings: int = Field(default=42, ge=1)
+    required_days: int = Field(default=14, ge=1)
+    progress_percent: int = Field(ge=0, le=100)
+    can_monitor: bool
+    ready_to_train: bool = False
+    model_path: str | None = None
+    confirmation_count: int = Field(default=0, ge=0)
+    required_confirmations: int = Field(default=4, ge=1)
+    confirmation_due: bool = True
+    last_confirmation_at: datetime | None = None
+
+
+class HealthConfirmationIn(BaseModel):
+    evidence: HealthEvidence
+    note: str | None = Field(default=None, max_length=500)
+
+
+class HealthConfirmation(HealthConfirmationIn):
+    id: int
+    hive_id: str
+    confirmed_at: datetime
+    accepted_for_enrollment: bool
 
 
 class HiveSummary(BaseModel):
@@ -64,6 +118,7 @@ class ReportIn(BaseModel):
     hive_ids: list[str] = Field(default_factory=lambda: ["H1", "H2", "H3"])
     language: Literal["tr", "en"] = "tr"
     generator: str = Field(default="manual", min_length=2, max_length=80)
+    grounding_sources: list[GroundingSource] = Field(default_factory=list, max_length=10)
 
     @field_validator("hive_ids")
     @classmethod

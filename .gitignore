@@ -3,6 +3,7 @@ data/
 
 # Virtual environments
 .venv/
+.venv311/
 venv/
 
 # Python
@@ -33,6 +34,7 @@ monitor_state.json
 
 # Hive-specific development models
 results/HIVE*_isolation.joblib
+results/hive_profiles/
 
 # Local environment and secrets
 .env
