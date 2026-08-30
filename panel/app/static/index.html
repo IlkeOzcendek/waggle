@@ -105,6 +105,29 @@
           <p id="hive-form-message" class="form-message" role="status"></p>
         </form>
         <div id="managed-hives" class="managed-hive-list"></div>
+        <section id="hive-device-panel" class="hive-device-panel" hidden>
+          <div class="section-subtitle"><div><p class="eyebrow">CİHAZ VE MODEL</p><h3 id="device-panel-title">Kovan kurulumu</h3></div><button id="close-device-panel" type="button">Kapat</button></div>
+          <div id="enrollment-status" class="enrollment-status"></div>
+          <form id="device-form" class="device-form">
+            <div><label for="device-name">Cihaz adı</label><input id="device-name" value="Kovan telefonu" required minlength="2" maxlength="80"></div>
+            <div><label for="device-kind">Cihaz türü</label><select id="device-kind"><option value="phone">Telefon mikrofonu</option><option value="sensor">Akustik sensör</option><option value="folder">WAV klasörü</option><option value="demo">Demo cihazı</option></select></div>
+            <button class="primary-button" type="submit">+ Cihaz ekle</button><p id="device-message" class="form-message" role="status"></p>
+          </form>
+          <article id="sensor-card" class="sensor-card" hidden>
+            <div class="sensor-step"><span>1</span><div><label for="sensor-device">Bağlı cihaz</label><select id="sensor-device"></select></div></div>
+            <div class="sensor-step"><span>2</span><div><label for="sensor-audio">Ses kaydı seçin</label><input id="sensor-audio" type="file" accept="audio/*"><small>iPhone’da Sesli Notlar ile kaydedip dosyayı seçin. Kayıt yalnızca yerel Waggle sunucusuna gönderilir.</small></div></div>
+            <form id="health-confirmation-form" class="health-confirmation" hidden>
+              <strong>Saha sağlık kontrolü zamanı</strong>
+              <p>Bu kısa kontrol en fazla dört günde bir istenir. Emin değilseniz kayıt modele eklenmez.</p>
+              <label for="health-evidence">Gözleminiz</label>
+              <select id="health-evidence"><option value="queen_seen">Kraliçe görüldü</option><option value="brood_healthy">Yumurta veya yavru düzeni sağlıklı</option><option value="hive_healthy">Kovan genel olarak sağlıklı görünüyor</option><option value="uncertain">Emin değilim</option></select>
+              <label for="health-note">Not (isteğe bağlı)</label><input id="health-note" maxlength="500">
+              <button class="primary-button" type="submit">Kontrolü kaydet</button><span id="health-confirmation-message" class="form-message" role="status"></span>
+            </form>
+            <div class="sensor-step"><span>3</span><div><button id="analyze-sensor-audio" class="primary-button" type="button">Kaydı gönder</button><p id="sensor-message" class="form-message" role="status"></p></div></div>
+            <div id="sensor-result" class="sensor-result" hidden></div>
+          </article>
+        </section>
       </section>
     </div>
 
@@ -187,7 +210,7 @@
     <div class="onboarding-head"><div><p class="eyebrow">HIZLI BAŞLANGIÇ</p><h2 id="onboarding-title">Waggle’a hoş geldiniz</h2><p>Dört kısa adımda kovanlarınızı izlemeye başlayın.</p></div><button id="close-guide" type="button" aria-label="Rehberi kapat">×</button></div>
     <div class="onboarding-steps">
       <article><span>1</span><div><h3>Kovanınızı ekleyin</h3><p><strong>Kovanlarım</strong> bölümünden anlaşılır bir ad ve konum girin. Teknik sensör kimliğini Waggle otomatik oluşturur.</p></div></article>
-      <article><span>2</span><div><h3>Cihazı veya modeli bağlayın</h3><p>Kovan cihazı ve Ilke’nin modeli güvenli olay adresine veri gönderir. Bağlantıyı <strong>Sistem Durumu</strong> ekranından izleyin.</p></div></article>
+      <article><span>2</span><div><h3>İzleme kaynağını bağlayın</h3><p>Kovan cihazından veya akustik analiz servisinden gelen olaylar güvenli biçimde panele aktarılır. Bağlantı durumunu <strong>Sistem Durumu</strong> ekranından takip edebilirsiniz.</p></div></article>
       <article><span>3</span><div><h3>Uyarıları takip edin</h3><p>Kritik bir sonuç geldiğinde <strong>Alarmlar</strong> bölümünü açın. Fiziksel kontrolden sonra alarmı kontrol edildi olarak işaretleyin.</p></div></article>
       <article><span>4</span><div><h3>Rapor ve yedekleri kullanın</h3><p>Haftalık değerlendirmeleri okuyun; gerektiğinde kayıtları dışa aktarın veya tam veritabanı yedeği indirin.</p></div></article>
     </div>
@@ -195,6 +218,6 @@
   </dialog>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=21"></script>
+  <script src="/static/panel.js?v=27"></script>
 </body>
 </html>

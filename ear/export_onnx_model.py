@@ -20,7 +20,7 @@ from sklearn.pipeline import Pipeline
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 
-def arguments():
+def arguments(): # The system checks which Joblib model is coming from the terminal, where the output should be generated, verifies if there is a validation CSV and retrieves information on where the report should be written
     parser = argparse.ArgumentParser(description = __doc__)
 
     parser.add_argument("joblib_model", type = Path)
@@ -30,7 +30,7 @@ def arguments():
 
     return parser.parse_args()
 
-def export_model(artifact, output: Path):
+def export_model(artifact, output: Path): # After creating a single pipeline with RobustScaler and IsolationForest and converting it to ONNX it places the feature, WATCH, ALARM, hive information as metadata into ONNX and saves the .onnx file
     feature_count = len(artifact["feature_columns"])
 
     pipeline = Pipeline([
@@ -63,7 +63,7 @@ def export_model(artifact, output: Path):
 
     onnx.save_model(model, output)
 
-def verify(artifact, onnx_path: Path, csv_path: Path):
+def verify(artifact, onnx_path: Path, csv_path: Path): # It feeds the same CSV data to the Joblib model and then to the ONNX model, compares the results and if there is no difference, it accepts the ONNX transformation as verified=True.
     data = pd.read_csv(csv_path)
 
     values = data[artifact["feature_columns"]].to_numpy(dtype = np.float64)
@@ -92,6 +92,8 @@ def main():
     artifact = joblib.load(args.joblib_model)
 
     export_model(artifact, args.output)
+
+    # ** ONNX generates a conversion report, compares the Joblib and ONNX results if a validation CSV is available, stops the program if there is a discrepancy and saves the report to a JSON file if requested
 
     report = {
         "source_model": str(args.joblib_model),

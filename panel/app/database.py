@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
 import json
 
-from .models import Hive, HiveCreate, HiveEvent, HiveEventIn, HiveSummary, HiveUpdate, Report, ReportIn
+from .models import Device, DeviceCreate, EnrollmentStatus, HealthConfirmation, HealthConfirmationIn, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveSummary, HiveUpdate, Report, ReportIn
 
 
 SCHEMA = """
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS reports (
     hive_ids TEXT NOT NULL,
     language TEXT NOT NULL DEFAULT 'tr' CHECK (language IN ('tr', 'en')),
     generator TEXT NOT NULL DEFAULT 'manual',
+    grounding_sources TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -53,6 +54,49 @@ CREATE TABLE IF NOT EXISTS settings (
     weather_enabled INTEGER NOT NULL DEFAULT 0,
     language TEXT NOT NULL DEFAULT 'tr' CHECK (language IN ('tr', 'en'))
 );
+CREATE TABLE IF NOT EXISTS devices (
+    device_id TEXT PRIMARY KEY,
+    hive_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('phone', 'sensor', 'folder', 'demo')),
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    FOREIGN KEY (hive_id) REFERENCES hives(hive_id)
+);
+CREATE INDEX IF NOT EXISTS idx_devices_hive ON devices(hive_id, active);
+CREATE TABLE IF NOT EXISTS hive_profiles (
+    hive_id TEXT PRIMARY KEY,
+    state TEXT NOT NULL CHECK (state IN ('device_required', 'enrolling', 'ready', 'monitoring')),
+    model_path TEXT,
+    enrollment_started_at TEXT,
+    ready_at TEXT,
+    FOREIGN KEY (hive_id) REFERENCES hives(hive_id)
+);
+CREATE TABLE IF NOT EXISTS enrollment_recordings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hive_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    window_count INTEGER NOT NULL,
+    healthy_confirmed INTEGER NOT NULL,
+    feature_names TEXT,
+    features TEXT,
+    FOREIGN KEY (hive_id) REFERENCES hives(hive_id),
+    FOREIGN KEY (device_id) REFERENCES devices(device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_enrollment_hive_time ON enrollment_recordings(hive_id, recorded_at);
+CREATE TABLE IF NOT EXISTS health_confirmations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hive_id TEXT NOT NULL,
+    confirmed_at TEXT NOT NULL,
+    evidence TEXT NOT NULL CHECK (evidence IN ('queen_seen', 'brood_healthy', 'hive_healthy', 'uncertain')),
+    note TEXT,
+    accepted_for_enrollment INTEGER NOT NULL,
+    FOREIGN KEY (hive_id) REFERENCES hives(hive_id)
+);
+CREATE INDEX IF NOT EXISTS idx_health_confirmation_hive_time ON health_confirmations(hive_id, confirmed_at DESC);
 """
 
 REQUIRED_BACKUP_COLUMNS = {
@@ -116,6 +160,17 @@ class EventStore:
                 connection.execute(
                     "ALTER TABLE reports ADD COLUMN generator TEXT NOT NULL DEFAULT 'manual'"
                 )
+            if "grounding_sources" not in report_columns:
+                connection.execute(
+                    "ALTER TABLE reports ADD COLUMN grounding_sources TEXT NOT NULL DEFAULT '[]'"
+                )
+            enrollment_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(enrollment_recordings)")
+            }
+            if "feature_names" not in enrollment_columns:
+                connection.execute("ALTER TABLE enrollment_recordings ADD COLUMN feature_names TEXT")
+            if "features" not in enrollment_columns:
+                connection.execute("ALTER TABLE enrollment_recordings ADD COLUMN features TEXT")
             table_sql = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'"
             ).fetchone()["sql"]
@@ -130,6 +185,10 @@ class EventStore:
             connection.executemany(
                 "INSERT OR IGNORE INTO hives (hive_id, name, location, created_at) VALUES (?, ?, ?, ?)",
                 defaults,
+            )
+            connection.executemany(
+                "INSERT OR IGNORE INTO hive_profiles (hive_id, state, model_path, ready_at) VALUES (?, 'monitoring', ?, ?)",
+                [(hive_id, "results/mendeley_isolation_monitor.onnx", now) for hive_id, *_ in defaults],
             )
             connection.execute(
                 """INSERT OR IGNORE INTO settings
@@ -185,7 +244,140 @@ class EventStore:
                 "INSERT INTO hives (hive_id, name, location, active, created_at) VALUES (?, ?, ?, 1, ?)",
                 (hive_id, hive.name.strip(), hive.location.strip() if hive.location else None, created_at.isoformat()),
             )
+            connection.execute(
+                "INSERT INTO hive_profiles (hive_id, state) VALUES (?, 'device_required')",
+                (hive_id,),
+            )
         return Hive(hive_id=hive_id, name=hive.name.strip(), location=hive.location.strip() if hive.location else None, active=True, created_at=created_at)
+
+    def devices(self, hive_id: str) -> list[Device]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM devices WHERE hive_id = ? ORDER BY active DESC, created_at",
+                (hive_id,),
+            ).fetchall()
+        return [self._device(row) for row in rows]
+
+    def add_device(self, hive_id: str, device: DeviceCreate) -> Device:
+        created_at = datetime.now(timezone.utc)
+        with self.connect() as connection:
+            profile = connection.execute(
+                "SELECT state FROM hive_profiles WHERE hive_id = ?", (hive_id,)
+            ).fetchone()
+            active_devices = connection.execute(
+                "SELECT COUNT(*) FROM devices WHERE hive_id = ? AND active = 1", (hive_id,)
+            ).fetchone()[0]
+            if profile and profile["state"] == "enrolling" and active_devices:
+                raise ValueError("Öğrenme sırasında tek bir mikrofon kullanılmalıdır")
+            count = connection.execute(
+                "SELECT COUNT(*) FROM devices WHERE hive_id = ?", (hive_id,)
+            ).fetchone()[0]
+            device_id = f"{hive_id}-D{count + 1}"
+            connection.execute(
+                "INSERT INTO devices (device_id, hive_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?)",
+                (device_id, hive_id, device.name.strip(), device.kind, created_at.isoformat()),
+            )
+            connection.execute(
+                "UPDATE hive_profiles SET state = 'enrolling', enrollment_started_at = COALESCE(enrollment_started_at, ?) WHERE hive_id = ? AND state = 'device_required'",
+                (created_at.isoformat(), hive_id),
+            )
+        return Device(device_id=device_id, hive_id=hive_id, name=device.name.strip(), kind=device.kind, created_at=created_at)
+
+    def enrollment_status(self, hive_id: str) -> EnrollmentStatus:
+        with self.connect() as connection:
+            profile = connection.execute(
+                "SELECT state, model_path FROM hive_profiles WHERE hive_id = ?", (hive_id,)
+            ).fetchone()
+            counts = connection.execute(
+                "SELECT COUNT(*) AS recordings, COUNT(DISTINCT SUBSTR(recorded_at, 1, 10)) AS days FROM enrollment_recordings WHERE hive_id = ? AND healthy_confirmed = 1",
+                (hive_id,),
+            ).fetchone()
+            confirmations = connection.execute(
+                "SELECT COALESCE(SUM(accepted_for_enrollment), 0) AS accepted, MAX(CASE WHEN accepted_for_enrollment = 1 THEN confirmed_at END) AS last_at FROM health_confirmations WHERE hive_id = ?",
+                (hive_id,),
+            ).fetchone()
+        state = profile["state"] if profile else "device_required"
+        recordings, days = int(counts["recordings"]), int(counts["days"])
+        confirmation_count = int(confirmations["accepted"])
+        last_confirmation = datetime.fromisoformat(confirmations["last_at"]) if confirmations["last_at"] else None
+        confirmation_due = last_confirmation is None or datetime.now(timezone.utc) - last_confirmation > timedelta(days=4)
+        progress = min(100, round(
+            40 * min(recordings / 42, 1) + 40 * min(days / 14, 1) + 20 * min(confirmation_count / 4, 1)
+        ))
+        return EnrollmentStatus(
+            hive_id=hive_id, state=state, recording_count=recordings,
+            recording_days=days, progress_percent=100 if state in {"ready", "monitoring"} else progress,
+            can_monitor=state in {"ready", "monitoring"},
+            ready_to_train=recordings >= 42 and days >= 14 and confirmation_count >= 4 and state == "enrolling",
+            model_path=profile["model_path"] if profile else None,
+            confirmation_count=confirmation_count,
+            confirmation_due=confirmation_due and state == "enrolling",
+            last_confirmation_at=last_confirmation,
+        )
+
+    def add_health_confirmation(self, hive_id: str, confirmation: HealthConfirmationIn) -> HealthConfirmation:
+        confirmed_at = datetime.now(timezone.utc)
+        accepted = confirmation.evidence != "uncertain"
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO health_confirmations (hive_id, confirmed_at, evidence, note, accepted_for_enrollment) VALUES (?, ?, ?, ?, ?)",
+                (hive_id, confirmed_at.isoformat(), confirmation.evidence, confirmation.note.strip() if confirmation.note else None, int(accepted)),
+            )
+        return HealthConfirmation(
+            id=cursor.lastrowid, hive_id=hive_id, confirmed_at=confirmed_at,
+            evidence=confirmation.evidence, note=confirmation.note,
+            accepted_for_enrollment=accepted,
+        )
+
+    def add_enrollment_recording(self, hive_id: str, device_id: str, filename: str, values, feature_names) -> EnrollmentStatus:
+        now = datetime.now(timezone.utc)
+        with self.connect() as connection:
+            device = connection.execute(
+                "SELECT 1 FROM devices WHERE device_id = ? AND hive_id = ? AND active = 1",
+                (device_id, hive_id),
+            ).fetchone()
+            if device is None:
+                raise ValueError("Cihaz bu kovana bağlı değil")
+            connection.execute(
+                "INSERT INTO enrollment_recordings (hive_id, device_id, recorded_at, filename, window_count, healthy_confirmed, feature_names, features) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+                (hive_id, device_id, now.isoformat(), filename, len(values), json.dumps(list(feature_names)), json.dumps(values.tolist() if hasattr(values, "tolist") else values)),
+            )
+            connection.execute(
+                "UPDATE devices SET last_seen_at = ? WHERE device_id = ?", (now.isoformat(), device_id)
+            )
+        return self.enrollment_status(hive_id)
+
+    def enrollment_features(self, hive_id: str):
+        import numpy as np
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT feature_names, features FROM enrollment_recordings WHERE hive_id = ? AND healthy_confirmed = 1 AND features IS NOT NULL ORDER BY recorded_at, id",
+                (hive_id,),
+            ).fetchall()
+        if not rows:
+            raise ValueError("Öğrenme özelliği bulunamadı")
+        schemas = [json.loads(row["feature_names"]) for row in rows]
+        if any(schema != schemas[0] for schema in schemas[1:]):
+            raise ValueError("Özellik şeması kayıtlar arasında değişmiş")
+        matrices = [np.asarray(json.loads(row["features"]), dtype=np.float64) for row in rows]
+        return np.concatenate(matrices), schemas[0]
+
+    def activate_profile(self, hive_id: str, model_path: str) -> EnrollmentStatus:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE hive_profiles SET state = 'monitoring', model_path = ?, ready_at = ? WHERE hive_id = ?",
+                (model_path, now, hive_id),
+            )
+        return self.enrollment_status(hive_id)
+
+    def touch_device(self, device_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE devices SET last_seen_at = ? WHERE device_id = ?",
+                (datetime.now(timezone.utc).isoformat(), device_id),
+            )
 
     def has_hive(self, hive_id: str) -> bool:
         with self.connect() as connection:
@@ -393,8 +585,8 @@ class EventStore:
             cursor = connection.execute(
                 """INSERT INTO reports
                 (period_start, period_end, summary, recommendations, hive_ids,
-                 language, generator, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                 language, generator, grounding_sources, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     report.period_start.isoformat(),
                     report.period_end.isoformat(),
@@ -403,6 +595,7 @@ class EventStore:
                     json.dumps(report.hive_ids),
                     report.language,
                     report.generator,
+                    json.dumps(report.grounding_sources),
                     created_at.isoformat(),
                 ),
             )
@@ -424,6 +617,7 @@ class EventStore:
                 hive_ids=json.loads(row["hive_ids"]),
                 language=row["language"] if "language" in row.keys() else "tr",
                 generator=row["generator"] if "generator" in row.keys() else "manual",
+                grounding_sources=json.loads(row["grounding_sources"]) if "grounding_sources" in row.keys() else [],
                 created_at=datetime.fromisoformat(row["created_at"]),
             )
             for row in rows
@@ -437,6 +631,15 @@ class EventStore:
             location=row["location"],
             active=bool(row["active"]),
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    @staticmethod
+    def _device(row: sqlite3.Row) -> Device:
+        return Device(
+            device_id=row["device_id"], hive_id=row["hive_id"], name=row["name"],
+            kind=row["kind"], active=bool(row["active"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            last_seen_at=datetime.fromisoformat(row["last_seen_at"]) if row["last_seen_at"] else None,
         )
 
     @staticmethod

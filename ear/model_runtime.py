@@ -13,7 +13,7 @@ import json
 import joblib
 import numpy as np
 
-def load_monitor(path: str | Path) -> dict[str, Any]:
+def load_monitor(path: str | Path) -> dict[str, Any]: # It examines the file and if it's Joblib therefore loads it directly. If it's ONNX it opens it with the ONNX Runtime, checks for necessary metadata, retrieves feature, watch, alarm, hive information and then returns the model ready to run
     path = Path(path)
 
     if path.suffix.lower() != ".onnx":
@@ -40,7 +40,7 @@ def load_monitor(path: str | Path) -> dict[str, Any]:
         "_onnx_session": session,
     }
 
-def anomaly_flags(artifact: dict[str, Any], values: np.ndarray) -> np.ndarray:
+def anomaly_flags(artifact: dict[str, Any], values: np.ndarray) -> np.ndarray: # If the model is ONN predict using ONNX otherwise predict using the scaler and Joblib models. In both cases the result returns a True or False 
     """
     
     It returns one Boolean anomaly decision per feature row

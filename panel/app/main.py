@@ -15,7 +15,7 @@ import requests
 
 from .database import EventStore
 from .exports import build_export
-from .models import AppSettings, ComponentStatus, DashboardState, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SystemStatus, WeatherState
+from .models import AppSettings, ComponentStatus, DashboardState, Device, DeviceCreate, EnrollmentStatus, HealthConfirmation, HealthConfirmationIn, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SensorAnalysis, SystemStatus, WeatherState
 from .auth import (
     ADMIN_USERNAME,
     COOKIE_NAME,
@@ -42,6 +42,9 @@ logger = logging.getLogger("waggle")
 MAX_BACKUP_BYTES = int(os.getenv("WAGGLE_MAX_BACKUP_BYTES", str(100 * 1024 * 1024)))
 DEVICE_STALE_SECONDS = int(os.getenv("WAGGLE_DEVICE_STALE_SECONDS", "900"))
 REPORT_STALE_SECONDS = int(os.getenv("WAGGLE_REPORT_STALE_SECONDS", "691200"))
+SENSOR_MODEL_PATH = Path(os.getenv("WAGGLE_SENSOR_MODEL", BASE_DIR.parent.parent / "results" / "mendeley_isolation_monitor.onnx"))
+HIVE_PROFILE_DIR = Path(os.getenv("WAGGLE_HIVE_PROFILE_DIR", BASE_DIR.parent.parent / "results" / "hive_profiles"))
+MAX_SENSOR_AUDIO_BYTES = int(os.getenv("WAGGLE_MAX_SENSOR_AUDIO_BYTES", str(25 * 1024 * 1024)))
 
 
 def integration_freshness(
@@ -79,7 +82,11 @@ class LoginRequest(BaseModel):
 
 
 PUBLIC_PATHS = {"/login", "/api/login", "/api/health"}
-DEVICE_POST_PATHS = {"/api/events", "/api/reports"}
+DEVICE_REQUESTS = {
+    ("POST", "/api/events"),
+    ("POST", "/api/reports"),
+    ("GET", "/api/agent/events"),
+}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
@@ -88,6 +95,10 @@ def is_cross_site_request(origin: str | None, fetch_site: str | None, expected: 
     if fetch_site == "cross-site":
         return True
     return bool(origin) and origin.rstrip("/") != expected.rstrip("/")
+
+
+def is_device_request(method: str, path: str) -> bool:
+    return (method.upper(), path) in DEVICE_REQUESTS
 
 
 def security_headers(path: str) -> dict[str, str]:
@@ -133,8 +144,7 @@ async def require_login(request: Request, call_next):
         request.state.username = username
         return await call_next(request)
     if (
-        path in DEVICE_POST_PATHS
-        and request.method == "POST"
+        is_device_request(request.method, path)
         and verify_device_key(request.headers.get(DEVICE_KEY_HEADER))
     ):
         request.state.device_authenticated = True
@@ -210,7 +220,7 @@ def system_status() -> SystemStatus:
     report_status = integration_freshness(last_report, REPORT_STALE_SECONDS)
     device_messages = {
         "ok": ("Canlı veri alınıyor", "Cihaz veya model sonuçları güvenli bağlantı üzerinden panele ulaşıyor."),
-        "waiting": ("İlk veri bekleniyor", "Ilke'nin modeli ya da bir kovan cihazı ilk olayı gönderdiğinde burada bağlantı zamanı görünecek."),
+        "waiting": ("İlk veri bekleniyor", "Kovan cihazı veya akustik analiz servisi ilk olayı gönderdiğinde bağlantı zamanı burada görünecek."),
         "warning": ("Cihaz verisi gecikiyor", "Son olay beklenen süreden eski. Kovan cihazını, modeli ve yerel ağ bağlantısını kontrol edin."),
     }
     report_messages = {
@@ -242,6 +252,12 @@ def list_events(limit: int = Query(default=50, ge=1, le=500)) -> list[HiveEvent]
     return store.recent(limit)
 
 
+@app.get("/api/agent/events", response_model=list[HiveEvent], include_in_schema=False)
+def list_agent_events(limit: int = Query(default=200, ge=1, le=500)) -> list[HiveEvent]:
+    """Read-only event feed for the authenticated local report agent."""
+    return store.recent(limit)
+
+
 @app.post("/api/events/{event_id}/acknowledge", response_model=HiveEvent)
 def acknowledge_event(event_id: int) -> HiveEvent:
     event = store.acknowledge(event_id)
@@ -253,6 +269,131 @@ def acknowledge_event(event_id: int) -> HiveEvent:
 @app.get("/api/dashboard", response_model=DashboardState)
 def dashboard() -> DashboardState:
     return DashboardState(hives=store.summaries(), events=store.recent(30))
+
+
+@app.post("/api/sensor-recordings", response_model=SensorAnalysis, status_code=201)
+async def analyze_sensor_recording(
+    request: Request,
+    hive_id: str = Query(pattern=r"^H[1-9][0-9]{0,2}$"),
+    device_id: str = Query(min_length=4, max_length=40),
+    filename: str = Query(default="phone-recording.wav", max_length=120),
+) -> SensorAnalysis:
+    """Collect enrollment audio or analyze it once the hive profile is ready."""
+    if not store.has_hive(hive_id):
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_SENSOR_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Ses kaydı izin verilen boyutu aşıyor")
+    contents = await request.body()
+    if not contents or len(contents) > MAX_SENSOR_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Ses kaydı boş veya çok büyük")
+    if len(contents) < 44 or contents[:4] != b"RIFF" or contents[8:12] != b"WAVE":
+        raise HTTPException(status_code=415, detail="Ses kaydı WAV biçimine dönüştürülemedi")
+    uploaded = tempfile.NamedTemporaryFile(prefix="waggle-phone-", suffix=".wav", delete=False)
+    uploaded_path = Path(uploaded.name)
+    try:
+        uploaded.write(contents)
+        uploaded.close()
+        from ear.wav_isolation_monitor import analyze_wav, wav_features
+
+        profile = store.enrollment_status(hive_id)
+        safe_name = Path(filename).name or "phone-recording.wav"
+        if not any(device.device_id == device_id and device.active for device in store.devices(hive_id)):
+            raise HTTPException(status_code=404, detail="Cihaz bu kovana bağlı değil")
+        if not profile.can_monitor:
+            if profile.confirmation_due:
+                raise HTTPException(status_code=422, detail="Yeni bir saha sağlık doğrulaması gerekiyor")
+            values, feature_names = wav_features(uploaded_path)
+            progress = store.add_enrollment_recording(hive_id, device_id, safe_name, values, feature_names)
+            if progress.ready_to_train:
+                from ear.profile_training import train_verified_profile
+
+                try:
+                    training_values, training_names = store.enrollment_features(hive_id)
+                    onnx_path = HIVE_PROFILE_DIR / f"{hive_id}.onnx"
+                    train_verified_profile(
+                        training_values, training_names, hive_id,
+                        HIVE_PROFILE_DIR / f"{hive_id}.joblib", onnx_path,
+                    )
+                    progress = store.activate_profile(hive_id, str(onnx_path))
+                except Exception:
+                    logger.exception("Kovana özel profil oluşturulamadı: %s", hive_id)
+            note = (
+                "Kovana özel profil doğrulandı ve izleme etkinleştirildi. Bundan sonraki kayıtlar WATCH/ALARM akışında değerlendirilir."
+                if progress.can_monitor else
+                f"Sağlıklı başlangıç kaydı eklendi: {progress.recording_count}/{progress.required_recordings} kayıt, "
+                f"{progress.recording_days}/{progress.required_days} gün. Profil hazır olana kadar alarm üretilmez."
+            )
+            return SensorAnalysis(
+                mode="enrollment", windows=len(values),
+                model=Path(progress.model_path).name if progress.model_path else None,
+                note=note,
+            )
+        model_path = Path(profile.model_path) if profile.model_path else SENSOR_MODEL_PATH
+        if not model_path.is_absolute():
+            model_path = BASE_DIR.parent.parent / model_path
+        if not model_path.exists():
+            raise HTTPException(status_code=503, detail="ONNX sensör modeli bulunamadı")
+
+        previous = next((item for item in store.recent(500) if item.hive_id == hive_id), None)
+        initial_run = previous.consecutive_anomalies if previous else 0
+        result = analyze_wav(model_path, uploaded_path, initial_run)
+        store.touch_device(device_id)
+        event = store.add(HiveEventIn(
+            hive_id=hive_id,
+            timestamp=datetime.now(timezone.utc),
+            status=result["status"],
+            anomaly_fraction=result["anomaly_fraction"],
+            consecutive_anomalies=result["consecutive_anomalies"],
+            source_file=f"phone:{safe_name}",
+        ))
+        return SensorAnalysis(
+            mode="monitoring", event=event,
+            windows=result["windows"],
+            model=model_path.name,
+            note="Bu sonuç kesin teşhis değildir; WATCH veya ALARM fiziksel kontrol gerektirir.",
+        )
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=f"Ses kaydı analiz edilemedi: {exc}") from exc
+    finally:
+        uploaded.close()
+        uploaded_path.unlink(missing_ok=True)
+
+
+@app.get("/api/hives/{hive_id}/devices", response_model=list[Device])
+def list_hive_devices(hive_id: str) -> list[Device]:
+    if not store.has_hive(hive_id):
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    return store.devices(hive_id)
+
+
+@app.post("/api/hives/{hive_id}/devices", response_model=Device, status_code=201)
+def create_hive_device(hive_id: str, device: DeviceCreate) -> Device:
+    if not store.has_hive(hive_id):
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    try:
+        return store.add_device(hive_id, device)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/hives/{hive_id}/enrollment", response_model=EnrollmentStatus)
+def get_hive_enrollment(hive_id: str) -> EnrollmentStatus:
+    if not store.has_hive(hive_id):
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    return store.enrollment_status(hive_id)
+
+
+@app.post("/api/hives/{hive_id}/health-confirmations", response_model=HealthConfirmation, status_code=201)
+def create_health_confirmation(hive_id: str, confirmation: HealthConfirmationIn) -> HealthConfirmation:
+    if not store.has_hive(hive_id):
+        raise HTTPException(status_code=404, detail="Kovan bulunamadı")
+    status = store.enrollment_status(hive_id)
+    if status.state != "enrolling":
+        raise HTTPException(status_code=409, detail="Saha doğrulaması yalnızca öğrenme döneminde eklenebilir")
+    if confirmation.evidence != "uncertain" and not status.confirmation_due:
+        raise HTTPException(status_code=409, detail="Yeni saha doğrulaması henüz gerekli değil")
+    return store.add_health_confirmation(hive_id, confirmation)
 
 
 @app.get("/api/settings", response_model=AppSettings)

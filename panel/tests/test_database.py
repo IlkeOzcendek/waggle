@@ -60,6 +60,7 @@ class EventStoreTest(unittest.TestCase):
             hive_ids=["H1", "H3"],
             language="en",
             generator="foundry-local:phi-3.5-mini",
+            grounding_sources=["alarm-interpretation", "alarm-inspection"],
         )
         created = self.store.add_report(report)
         saved = self.store.reports()[0]
@@ -67,6 +68,7 @@ class EventStoreTest(unittest.TestCase):
         self.assertEqual(saved.hive_ids, ["H1", "H3"])
         self.assertEqual(saved.language, "en")
         self.assertEqual(saved.generator, "foundry-local:phi-3.5-mini")
+        self.assertEqual(saved.grounding_sources, ["alarm-interpretation", "alarm-inspection"])
 
     def test_add_hive_and_receive_its_event(self):
         hive = self.store.add_hive(HiveCreate(name="Arka Bahçe Kovanı", location="Gölbaşı"))

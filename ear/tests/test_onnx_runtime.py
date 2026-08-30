@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 JOBLIB_MODEL = ROOT / "results" / "mendeley_isolation_monitor.joblib"
 ONNX_MODEL = ROOT / "results" / "mendeley_isolation_monitor.onnx"
 
-class OnnxRuntimeTest(unittest.TestCase):
+class OnnxRuntimeTest(unittest.TestCase): # The system tests that the model converted from Joblib to ONNX remains intact that uses the same features and retains the WATCH =5 / ALARM =30 settings
     @classmethod
     def setUpClass(cls):
         cls.joblib_artifact = joblib.load(JOBLIB_MODEL)
@@ -30,7 +30,7 @@ class OnnxRuntimeTest(unittest.TestCase):
 
         self.assertEqual(self.onnx_artifact["alarm_windows"], 30)
 
-    def test_onnx_matches_joblib_decisions(self):
+    def test_onnx_matches_joblib_decisions(self): # It feeds the same 256 samples into both the original Joblib model and the model converted to ONNX and checks if the results are exactly the same
         rng = np.random.default_rng(42)
 
         scaler = self.joblib_artifact["scaler"]

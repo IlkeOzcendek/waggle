@@ -131,55 +131,59 @@ def save_state(path, state):
     temporary.write_text(json.dumps(state, indent = 2) + "\n", encoding = "utf-8")
     temporary.replace(path)
 
+def analyze_wav(model_path, wav_path, initial_run=0):
+    """Analyze one PCM WAV and return the state transition used by every client."""
+    artifact = load_monitor(model_path)
+    values, names = wav_features(wav_path)
+    if names != artifact["feature_columns"]:
+        raise ValueError("Feature schema does not match the monitor artifact")
+    flags = anomaly_flags(artifact, values)
+    combined = np.concatenate((np.ones(initial_run, dtype=bool), flags))
+    watch_completion = first_completion(combined, artifact["watch_windows"])
+    alarm_completion = first_completion(combined, artifact["alarm_windows"])
+    final_run, maximum_run = update_run(flags, initial_run)
+    status = (
+        "ALARM" if final_run >= artifact["alarm_windows"] else
+        "WATCH" if final_run >= artifact["watch_windows"] else "NORMAL"
+    )
+    return {
+        "status": status,
+        "windows": len(flags),
+        "anomaly_fraction": float(flags.mean()),
+        "initial_consecutive_anomalies": initial_run,
+        "consecutive_anomalies": min(final_run, artifact["alarm_windows"]),
+        "maximum_consecutive_anomalies": maximum_run,
+        "watch_completion_second": None if watch_completion is None else max(0, watch_completion - initial_run),
+        "alarm_completion_second": None if alarm_completion is None else max(0, alarm_completion - initial_run),
+    }
+
 def main():
     args = arguments()
 
     artifact = load_monitor(args.model)
 
-    values, names = wav_features(args.wav)
-
-    if names != artifact["feature_columns"]: # features not same then
-        raise SystemExit(f" !* Feature schema mismatch:\nextracted={names}\nmodel={artifact['feature_columns']} *! ")
-
-    flags = anomaly_flags(artifact, values)
-
     state = load_state(args.state, artifact)
 
     initial_run = int(state.get("consecutive_anomalies", 0))
 
-    combined = np.concatenate((np.ones(initial_run, dtype = bool), flags))
-
-    watch_combined = first_completion(combined, artifact["watch_windows"])
-
-    alarm_combined = first_completion(combined, artifact["alarm_windows"])
-
-    watch_at = None if watch_combined is None else max(0, watch_combined - initial_run)
-
-    alarm_at = None if alarm_combined is None else max(0, alarm_combined - initial_run)
-
-    final_run, maximum_run = update_run(flags, initial_run)
-
-    status = (
-        "alarm" if final_run >= artifact["alarm_windows"] else
-        "watch" if final_run >= artifact["watch_windows"] else "normal"
-    )
+    result = analyze_wav(args.model, args.wav, initial_run)
 
     # Once alarm is reached a larger number carries no extra information and would only make the next state load unnecessarily large
 
-    state["consecutive_anomalies"] = min(final_run, artifact["alarm_windows"])
-    state["last_status"] = status
+    state["consecutive_anomalies"] = result["consecutive_anomalies"]
+    state["last_status"] = result["status"].lower()
     state["last_wav"] = str(args.wav)
 
     save_state(args.state, state)
 
-    print(f"windows = {len(flags)}")
-    print(f"anomaly_fraction = {float(flags.mean()):.4f}")
+    print(f"windows = {result['windows']}")
+    print(f"anomaly_fraction = {result['anomaly_fraction']:.4f}")
     print(f"initial_consecutive_anomalies = {initial_run}")
-    print(f"final_consecutive_anomalies = {final_run}")
-    print(f"maximum_consecutive_anomalies = {maximum_run}")
-    print(f"watch_completion_second = {watch_at}")
-    print(f"alarm_completion_second = {alarm_at}")
-    print(f"status = {status}")
+    print(f"final_consecutive_anomalies = {result['consecutive_anomalies']}")
+    print(f"maximum_consecutive_anomalies = {result['maximum_consecutive_anomalies']}")
+    print(f"watch_completion_second = {result['watch_completion_second']}")
+    print(f"alarm_completion_second = {result['alarm_completion_second']}")
+    print(f"status = {result['status'].lower()}")
     print("WARNING !* a different microphone/hive requires its own healthy enrollment model *! ")
 
 if __name__ == "__main__":

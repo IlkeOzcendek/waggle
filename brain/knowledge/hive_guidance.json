@@ -1,0 +1,32 @@
+[
+  {
+    "id": "alarm-interpretation",
+    "tags": ["ALARM", "persistent_acoustic_change", "queen_loss", "diagnosis"],
+    "tr": "Kalıcı akustik değişim kraliçe kaybıyla uyumlu olabilir, tek başına kesin tanı değildir.",
+    "en": "Persistent acoustic change may be compatible with queen loss; it is not a definitive diagnosis on its own."
+  },
+  {
+    "id": "alarm-inspection",
+    "tags": ["ALARM", "inspect_hive", "check_queen"],
+    "tr": "Alarm sonrasında kovan fiziksel olarak incelenmeli, kraliçenin varlığı ve koloninin genel durumu doğrulanmalıdır.",
+    "en": "After an alarm, physically inspect the hive and verify queen presence and overall colony condition."
+  },
+  {
+    "id": "watch-follow-up",
+    "tags": ["WATCH", "developing_acoustic_change", "record_again", "continue_monitoring"],
+    "tr": "WATCH gelişen bir değişimi belirtir. Yeni kayıt alınmalı ve değişimin kalıcı olup olmadığı izlenmelidir.",
+    "en": "WATCH indicates a developing change. Capture another recording and monitor whether the change persists."
+  },
+  {
+    "id": "normal-baseline",
+    "tags": ["NORMAL", "baseline", "continue_monitoring"],
+    "tr": "NORMAL sonucu sesin kovan için öğrenilmiş sağlıklı profil içinde kaldığını gösterir; rutin izleme sürdürülmelidir.",
+    "en": "A NORMAL result means the audio remained within the hive's learned healthy profile; routine monitoring should continue."
+  },
+  {
+    "id": "field-verification",
+    "tags": ["baseline", "health_confirmation", "queen", "brood"],
+    "tr": "Sağlıklı başlangıç profili aynı kovan ve mikrofonla farklı günlerde alınan kayıtlar ve düzenli saha doğrulamalarıyla oluşturulmalıdır",
+    "en": "Build the healthy baseline from recordings taken on different days with the same hive and microphone, supported by periodic field confirmations"
+  }
+]
