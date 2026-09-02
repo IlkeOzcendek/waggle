@@ -5,21 +5,26 @@ It generates a safe bilingual hive report with Microsoft Foundry Local
 """
 
 from __future__ import annotations # Postpones evaluation of type annotations which makes forward references and modern type hints easier to use
-from dataclasses import dataclass # Provides @dataclass for defining lightweight classes that mainly store structured data
+from dataclasses import dataclass, replace # Provides @dataclass for defining lightweight classes that mainly store structured data
 from datetime import datetime, timedelta, timezone
 from typing import Literal # Literal restricts a type hint to a fixed set of allowed string values
+from urllib.parse import urlparse # It tells a host-only endpoint override apart from one that already carries a path
 
 import argparse
 import asyncio # It runs the asynchronous Agent Framework assessment from synchronous code
 import json
+import logging # It records why an optional model path degraded to the deterministic fallback
 import os
 import re
 
 import subprocess # It executes Foundry CLI commands such as model load and server restart
+import unicodedata # It folds Turkish text so an uppercase hedge is still recognised
 
 import requests
 
 from brain.local_rag import retrieve_guidance
+
+logger = logging.getLogger(__name__)
 
 Language = Literal["tr", "en"]
 
@@ -46,8 +51,26 @@ def _run_foundry(*arguments: str) -> str: # It runs one Foundry CLI command and 
     )
     return result.stdout # It return the CLI output so the caller can parse it
 
+def _llm_timeout(default: float = 180) -> float: # It reads the model call timeout so slow hardware can be accommodated without a code change
+    try:
+        return max(float(os.getenv("WAGGLE_LLM_TIMEOUT", default)), 1)
+    except ValueError:
+        logger.warning("WAGGLE_LLM_TIMEOUT is not a number; using %s seconds", default)
+        return default
+
 def _foundry_connection(alias: str) -> tuple[str, str]: # It ensures the requested local model is loaded and returns
-    def load_and_probe() -> tuple[str, str]: 
+    # An explicit endpoint bypasses CLI discovery entirely, which lets the model path
+    # run against any OpenAI-compatible server and be exercised without Foundry installed.
+    configured_base_url = os.getenv("WAGGLE_FOUNDRY_BASE_URL", "").strip()
+
+    if configured_base_url:
+        endpoint = configured_base_url.rstrip("/")
+        # The CLI path appends /v1, so a host-only override is completed the same way.
+        if urlparse(endpoint).path in ("", "/"):
+            endpoint = f"{endpoint}/v1"
+        return endpoint, os.getenv("WAGGLE_LLM_MODEL", alias)
+
+    def load_and_probe() -> tuple[str, str]:
         subprocess.run(
             ["foundry", "model", "load", alias],
             check = True,
@@ -83,19 +106,23 @@ def _foundry_connection(alias: str) -> tuple[str, str]: # It ensures the request
 
         return load_and_probe()
 
-def _extract_json(text: str) -> dict: # It extracts the first JSON object from model text and rejects non dictionary output 
+def _extract_json(text: str) -> dict: # It extracts the first JSON object from model text and rejects non dictionary output
 
-    match = re.search(r"\{.*\}", text, flags = re.DOTALL)
+    decoder = json.JSONDecoder()
 
-    if not match:
-        raise ValueError("Foundry response did not contain a JSON object")
+    # Small models often append commentary, or a second object, after the JSON they were
+    # asked for. raw_decode stops at the end of the first complete value, so trailing
+    # noise no longer swallows the whole response the way a greedy regex did.
+    for start in (index for index, character in enumerate(text) if character == "{"):
+        try:
+            value, _ = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
 
-    value = json.loads(match.group(0))
+        if isinstance(value, dict):
+            return value
 
-    if not isinstance(value, dict):
-        raise ValueError("Foundry assessment must be a JSON object")
-    
-    return value
+    raise ValueError("Foundry response did not contain a JSON object")
 
 def _fallback_assessment(events: list[dict]) -> dict: # It is deterministic safety fallback used when the local model or its output cannot be trusted
 
@@ -201,9 +228,9 @@ def assess_with_foundry(events: list[dict], alias: str = "phi-3.5-mini", knowled
             # Makes the assessment as deterministic and repeatable as possible
             "temperature": 0,
             # The limit output size because only one compact JSON object is expected
-            "max_tokens": 160,
+            "max_tokens": 420,
         },
-        timeout = 180,
+        timeout = _llm_timeout(),
     )
     response.raise_for_status()
 
@@ -224,12 +251,14 @@ async def assess_with_agent_framework( # The alternative path that performs the 
 
     from agent_framework import Agent
 
-    from agent_framework.openai import OpenAIChatClient
+    # Foundry Local serves /v1/chat/completions, so the Chat Completions client is
+    # required here. OpenAIChatClient targets the Responses API and would fail.
+    from agent_framework.openai import OpenAIChatCompletionClient
 
     base_url, model_id = _foundry_connection(alias)
 
     agent = Agent( # It creates a constrained offline reporting agent backed by the local Foundry model
-        client = OpenAIChatClient(
+        client = OpenAIChatCompletionClient(
             model = model_id,
             base_url = base_url,
             api_key = "foundry-local",
@@ -295,14 +324,23 @@ async def assess_with_agent_framework( # The alternative path that performs the 
 def render_report(events: list[dict], assessment: dict, language: Language, generator: str) -> ReportDraft: # It converts structured assessment data into a safe human readable Turkish or English report
     hive_ids = list(dict.fromkeys(event["hive_id"] for event in events)) # Collect unique hive IDs while preserving event order
 
-    alarm_hives = [event["hive_id"] for event in events if event["status"] == "ALARM"] # Identify hives requiring immediate inspection language
+    alarm_hives = list(dict.fromkeys(event["hive_id"] for event in events if event["status"] == "ALARM")) # Identify hives requiring immediate inspection language
 
-    watch_hives = [event["hive_id"] for event in events if event["status"] == "WATCH"] # Identify hives with developing acoustic change
+    watch_hives = list(dict.fromkeys(event["hive_id"] for event in events if event["status"] == "WATCH")) # Identify hives with developing acoustic change
 
-    normal_hives = [event["hive_id"] for event in events if event["status"] == "NORMAL"] # It identifies hives remaining within their learned baseline
+    normal_hives = list(dict.fromkeys(event["hive_id"] for event in events if event["status"] == "NORMAL")) # It identifies hives remaining within their learned baseline
+
+    status_counts = {status: sum(event["status"] == status for event in events) for status in ("NORMAL", "WATCH", "ALARM")}
+    fractions = [float(event.get("anomaly_fraction", 0)) for event in events]
+    average_fraction = sum(fractions) / len(fractions) if fractions else 0
+    maximum_fraction = max(fractions, default=0)
+
+    confirmed_hives = list(dict.fromkeys(event["hive_id"] for event in events if event.get("inspection_result") == "issue_confirmed"))
+    cleared_hives = list(dict.fromkeys(event["hive_id"] for event in events if event.get("inspection_result") == "no_issue_found"))
+    uncertain_hives = list(dict.fromkeys(event["hive_id"] for event in events if event.get("inspection_result") == "uncertain"))
 
     if language == "tr": # Render Turkish summary sentences and Turkish recommendation texts here
-        parts = []
+        parts = [f"Bu değerlendirme {len(hive_ids)} kovandan gelen {len(events)} akustik olayı kapsıyor. Kayıtların {status_counts['NORMAL']} tanesi normal, {status_counts['WATCH']} tanesi izleme ve {status_counts['ALARM']} tanesi alarm durumunda. Dönem genelindeki ortalama aykırı pencere oranı %{average_fraction * 100:.0f}, en yüksek oran ise %{maximum_fraction * 100:.0f} olarak ölçüldü."]
         if normal_hives:
             parts.append(f"{', '.join(normal_hives)} normal akustik profili içinde kaldı")
         if watch_hives:
@@ -311,6 +349,12 @@ def render_report(events: list[dict], assessment: dict, language: Language, gene
             parts.append(
                 f"{', '.join(alarm_hives)} için kraliçe kaybıyla uyumlu olabilecek kalıcı akustik değişim algılandı, bu kesin tanı değildir"
             )
+        if confirmed_hives:
+            parts.append(f"{', '.join(confirmed_hives)} için saha kontrolünde sorun doğrulandı")
+        if cleared_hives:
+            parts.append(f"{', '.join(cleared_hives)} için saha kontrolünde belirgin sorun görülmedi")
+        if uncertain_hives:
+            parts.append(f"{', '.join(uncertain_hives)} için saha kontrolü belirsiz kaldı")
         actions = {
             "continue_monitoring": "Rutin akustik izlemeye devam edin",
             "record_again": "Yeni bir ses kaydı alın ve değişimin sürüp sürmediğini kontrol edin",
@@ -319,7 +363,7 @@ def render_report(events: list[dict], assessment: dict, language: Language, gene
         }
 
     else: # English versions are here
-        parts = []
+        parts = [f"This assessment covers {len(events)} acoustic events from {len(hive_ids)} hives. The period contains {status_counts['NORMAL']} normal, {status_counts['WATCH']} watch, and {status_counts['ALARM']} alarm records. The mean anomalous-window ratio was {average_fraction * 100:.0f}%, with a maximum of {maximum_fraction * 100:.0f}%."]
         if normal_hives:
             parts.append(f"{', '.join(normal_hives)} remained within the learned acoustic baseline")
 
@@ -330,6 +374,12 @@ def render_report(events: list[dict], assessment: dict, language: Language, gene
             parts.append(
                 f"Persistent acoustic change compatible with possible queen loss was detected for {', '.join(alarm_hives)}; this is not a definitive diagnosis"
             )
+        if confirmed_hives:
+            parts.append(f"A field inspection confirmed an issue for {', '.join(confirmed_hives)}")
+        if cleared_hives:
+            parts.append(f"No evident issue was found during field inspection for {', '.join(cleared_hives)}")
+        if uncertain_hives:
+            parts.append(f"The field inspection remained inconclusive for {', '.join(uncertain_hives)}")
 
         actions = {
             "continue_monitoring": "Continue routine acoustic monitoring",
@@ -347,6 +397,237 @@ def render_report(events: list[dict], assessment: dict, language: Language, gene
         assessment = assessment,
     )
 
+MAX_SUMMARY_CHARACTERS = 700 # An upper bound on model prose so a runaway generation cannot fill the report card
+# A summary shorter than this carries less than the deterministic template it would replace.
+MIN_SUMMARY_CHARACTERS = 140
+MAX_RECOMMENDATION_CHARACTERS = 180
+
+# Vocabulary that only appears when the model copies its own instructions or leaks a
+# serialisation artefact into the prose.
+PROMPT_LEAK_PATTERNS = [
+    r"\b(instruction|allowed_output|local_knowledge|event_count|status_counts|action_codes|hive_ids)\b",
+    r"\b(json|dict|list|str|bool)\b",
+    r"'(dict|str|list|int|bool|json|none)\b",
+    r"\b(olgu|olgular|talimat|anahtar kelime)\b",
+    r"\bkesinlik iddia\w*\s+etme",
+    r"\bdo not claim\b",
+]
+# A routine period yields a single action code, so one recommendation must stay valid.
+RECOMMENDATION_RANGE = (1, 5)
+
+# Phrasings that assert a diagnosis or certainty. The panel promises early warning, never
+# a verdict, so prose containing any of these is rejected in favour of the template text.
+BANNED_NARRATIVE_PATTERNS = {
+    "tr": [
+        # "kraliçe kaybıyla uyumlu olabilir" is the hedged wording the prompt and the
+        # knowledge base both use, so a hedging continuation cancels the match.
+        r"kraliçe\w*\s+(öl\w+|kayıp|kayb\w+|yok|gitmiş)(?!\w*\s+(uyumlu|olabil|olası|şüphe))",
+        r"tanı\s+(kondu|konuldu)",
+        r"teşhis\s+(kondu|konuldu|edildi)",
+        r"hastalık\w*\s+\w*\s*(tespit\s+edil|saptan|doğruland)",
+        r"koloni\w*\s+(öldü|ölmüş)",
+    ],
+    "en": [
+        r"\bqueen\w*\s+(is|has|was|had)?\s*(dead|died|lost|missing|gone)",
+        r"\bdiagnos(ed|ing)\b",
+        r"\bdisease\s+\w*\s*(is\s+)?(present|detected|confirmed)",
+        r"\bcolony\s+(is|has)?\s*(dead|died)",
+    ],
+}
+
+# A report that raises the possibility of queen loss must carry a hedge. Requiring the
+# disclaimer is a stronger guarantee than trying to enumerate every way of denying it.
+REQUIRED_HEDGE_MARKERS = {
+    "tr": ("olabil", "olasi", "erken uyari", "kesin degil", "kesin tani degil", "kesin teshis degil", "suphe"),
+    "en": ("possible", "possibly", "may ", "might ", "early warning", "not a definitive", "not a diagnosis", "suggest"),
+}
+
+def _fold(text: str) -> str: # Turkish dotted and dotless i survive neither casefold nor a naive lower(), so folding is explicit
+    # NFKD never decomposes ı (U+0131), so it is mapped explicitly; every marker is
+    # written with a plain i.
+    lowered = text.replace("İ", "i").replace("I", "i").casefold().replace("ı", "i")
+    stripped = unicodedata.normalize("NFKD", lowered)
+    return "".join(character for character in stripped if not unicodedata.combining(character))
+
+def _narrative_enabled() -> bool: # Model written prose can be switched off without losing the model backed assessment
+    return os.getenv("WAGGLE_LLM_NARRATIVE", "1") != "0"
+
+def _narrative_facts(events: list[dict], assessment: dict, language: Language) -> dict: # The closed set of facts the narrative may draw on
+    def hives_with(predicate) -> list[str]:
+        return list(dict.fromkeys(event["hive_id"] for event in events if predicate(event)))
+
+    fractions = [float(event.get("anomaly_fraction", 0)) for event in events]
+
+    return {
+        "language": language,
+        "event_count": len(events),
+        "status_counts": {status: sum(event["status"] == status for event in events) for status in ("NORMAL", "WATCH", "ALARM")},
+        "average_anomaly_percent": round((sum(fractions) / len(fractions) if fractions else 0) * 100),
+        "peak_anomaly_percent": round(max(fractions, default=0) * 100),
+        "normal_hives": hives_with(lambda event: event["status"] == "NORMAL"),
+        "watch_hives": hives_with(lambda event: event["status"] == "WATCH"),
+        "alarm_hives": hives_with(lambda event: event["status"] == "ALARM"),
+        "confirmed_hives": hives_with(lambda event: event.get("inspection_result") == "issue_confirmed"),
+        "cleared_hives": hives_with(lambda event: event.get("inspection_result") == "no_issue_found"),
+        "uncertain_hives": hives_with(lambda event: event.get("inspection_result") == "uncertain"),
+        "priority": assessment["priority"],
+        "inspection_required": assessment["inspection_required"],
+        "action_codes": assessment["action_codes"],
+    }
+
+def _validate_narrative(payload: dict, allowed_hive_ids: set[str], language: Language, hedge_required: bool = False) -> tuple[str, list[str]]: # It rejects prose that is malformed, invents hives or asserts a diagnosis
+    if not isinstance(payload, dict):
+        raise ValueError("Narrative payload is not an object")
+
+    summary = payload.get("summary")
+    recommendations = payload.get("recommendations")
+
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("Narrative summary is missing")
+
+    if not isinstance(recommendations, list) or not all(isinstance(item, str) and item.strip() for item in recommendations):
+        raise ValueError("Narrative recommendations are malformed")
+
+    summary = " ".join(summary.split())
+    recommendations = [" ".join(item.split()) for item in recommendations]
+
+    if len(summary) > MAX_SUMMARY_CHARACTERS:
+        raise ValueError("Narrative summary is too long")
+
+    if len(summary) < MIN_SUMMARY_CHARACTERS:
+        raise ValueError("Narrative summary is too thin to replace the template")
+
+    minimum, maximum = RECOMMENDATION_RANGE
+    if not minimum <= len(recommendations) <= maximum:
+        raise ValueError("Narrative recommendation count is out of range")
+
+    if any(len(item) > MAX_RECOMMENDATION_CHARACTERS for item in recommendations):
+        raise ValueError("A narrative recommendation is too long")
+
+    # Each string is scanned on its own so a banned phrase cannot be assembled across the
+    # boundary between the summary and a recommendation.
+    named_hives: set[str] = set()
+
+    for text in (summary, *recommendations):
+        if re.search(r"https?://|[#*`|]", text):
+            raise ValueError("Narrative contains markup or a link")
+
+        mentioned = {token.upper() for token in re.findall(r"\bH\d+\b", text, flags=re.IGNORECASE)}
+        if not mentioned <= allowed_hive_ids:
+            raise ValueError(f"Narrative mentions unknown hives: {sorted(mentioned - allowed_hive_ids)}")
+
+        named_hives |= mentioned
+
+        for pattern in PROMPT_LEAK_PATTERNS:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                raise ValueError(f"Narrative leaks its own prompt: {pattern}")
+
+        for pattern in BANNED_NARRATIVE_PATTERNS[language]:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                raise ValueError(f"Narrative asserts a diagnosis: {pattern}")
+
+    # A report that names no hive is less useful than the template it would replace.
+    if allowed_hive_ids and not named_hives:
+        raise ValueError("Narrative names no hive")
+
+    if hedge_required and not any(marker in _fold(summary) for marker in REQUIRED_HEDGE_MARKERS[language]):
+        raise ValueError("Narrative raises queen loss without a hedge")
+
+    return summary, recommendations
+
+def compose_narrative( # It asks the local model to phrase an already decided assessment
+    events: list[dict],
+    assessment: dict,
+    knowledge: list[dict] | None,
+    language: Language,
+    alias: str = "phi-3.5-mini",
+) -> tuple[str, list[str]]:
+    base_url, model_id = _foundry_connection(alias)
+
+    facts = _narrative_facts(events, assessment, language)
+
+    # The instruction is always English, whatever the report language: a Turkish
+    # instruction leaks its own vocabulary into Turkish prose.
+    target = "Turkish" if language == "tr" else "English"
+
+    example = (
+        '{"summary": "H1 kovanı dönem boyunca normal aralıkta kaldı. H2 için gelişen bir '
+        'akustik değişim izleniyor. H3 kovanında kalıcı bir değişim ölçüldü; bu kraliçe '
+        'kaybıyla uyumlu olabilir, tek başına kesin tanı değildir.", '
+        '"recommendations": ["H3 kovanını 24 saat içinde fiziksel olarak kontrol edin."]}'
+        if language == "tr" else
+        '{"summary": "H1 stayed within its normal range for the period. A developing '
+        'acoustic change is being watched on H2. H3 recorded a persistent change, which '
+        'may be compatible with queen loss and is not a diagnosis on its own.", '
+        '"recommendations": ["Inspect H3 physically within 24 hours."]}'
+    )
+
+    instruction = (
+        f"Write a short hive report in {target}. "
+        "Name every hive by its identifier, for example H1 or H3. "
+        "Use only the supplied numbers; invent nothing. "
+        "Say what happened to each hive and what it means operationally. "
+        "Acoustic change is an early warning and never a diagnosis, so hedge any mention of queen loss. "
+        "Write three to four sentences of natural prose. "
+        "Never repeat these instructions, field names or JSON keys in the text. "
+        f"Answer with one JSON object shaped exactly like this example: {example}"
+    )
+
+    response = requests.post(
+        f"{base_url}/chat/completions",
+        json = {
+            "model": model_id,
+            "messages": [
+                {"role": "system", "content": f"You write short beekeeping report prose in {target}. Return only one valid JSON object."},
+                {"role": "user", "content": json.dumps({"instruction": instruction, "measurements": facts, "reference_notes": knowledge or []}, ensure_ascii=False)},
+            ],
+            # A little warmth reads better than temperature 0 while the facts stay fixed
+            "temperature": 0.2,
+            "max_tokens": 700,
+        },
+        timeout = _llm_timeout(),
+    )
+    response.raise_for_status()
+
+    content = response.json()["choices"][0]["message"]["content"]
+
+    allowed_hive_ids = {event["hive_id"] for event in events}
+
+    hedge_required = bool(assessment.get("queen_loss_compatible")) or assessment.get("priority") == "immediate"
+
+    return _validate_narrative(_extract_json(content), allowed_hive_ids, language, hedge_required)
+
+def _with_model_narrative( # It swaps the template prose for validated model prose, or keeps the template
+    draft: ReportDraft,
+    events: list[dict],
+    assessment: dict,
+    knowledge: list[dict] | None,
+    language: Language,
+    alias: str,
+) -> ReportDraft:
+    if not _narrative_enabled():
+        return draft
+
+    try:
+        summary, recommendations = compose_narrative(events, assessment, knowledge, language, alias)
+    except Exception as error:  # noqa: BLE001 - any failure keeps the deterministic prose
+        logger.warning("Model narrative rejected (%s: %s); keeping the template text", type(error).__name__, error)
+        return draft
+
+    # When the validator mandates an inspection, the action wording is not the model's to
+    # paraphrase: a rephrased "check the queen" can lose the instruction. The model still
+    # writes the summary, the deterministic steps stand.
+    mandated = {"inspect_hive", "check_queen"} & set(assessment.get("action_codes") or [])
+    if assessment.get("inspection_required") or mandated:
+        recommendations = draft.recommendations
+
+    return replace(
+        draft,
+        summary = summary,
+        recommendations = recommendations,
+        generator = f"{draft.generator}+llm-narrative",
+    )
+
 def generate_report(events: list[dict], language: Language, alias: str = "phi-3.5-mini") -> ReportDraft:
     knowledge = retrieve_guidance(events, language)
 
@@ -355,14 +636,21 @@ def generate_report(events: list[dict], language: Language, alias: str = "phi-3.
 
         generator = f"foundry-local:{alias}"
 
-    except (OSError, subprocess.SubprocessError, requests.RequestException, KeyError, ValueError, json.JSONDecodeError):
+    except (OSError, subprocess.SubprocessError, requests.RequestException, KeyError, ValueError, json.JSONDecodeError) as error:
+        logger.warning("Foundry Local assessment failed (%s: %s); using the deterministic fallback", type(error).__name__, error)
+
         assessment = _fallback_assessment(events)
 
         generator = "safe-fallback"
 
     assessment["knowledge_ids"] = [item["id"] for item in knowledge] # Preserves the IDs of grounding passages for traceability or auditing
 
-    return render_report(events, assessment, language, generator)
+    draft = render_report(events, assessment, language, generator)
+
+    if generator == "safe-fallback": # No model reached the assessment, so none is asked for the prose
+        return draft
+
+    return _with_model_narrative(draft, events, assessment, knowledge, language, alias)
 
 def generate_agent_report(events: list[dict], language: Language, alias: str = "phi-3.5-mini") -> ReportDraft: # The agent Framework variant of the weekly report pipeline
     """
@@ -376,15 +664,30 @@ def generate_agent_report(events: list[dict], language: Language, alias: str = "
     try:
         assessment = asyncio.run(assess_with_agent_framework(events, alias, knowledge))
         generator = f"agent-framework:foundry-local:{alias}"
-    except Exception:
-        # Reporting must remain available if the optional framework or local
+    except ImportError:
+        # Agent Framework is an optional dependency and is absent on Python 3.9.
+        logger.warning("Agent Framework is not installed; using the deterministic fallback")
+
+        assessment = _fallback_assessment(events)
+
+        generator = "safe-fallback"
+    except Exception as error:  # noqa: BLE001 - the SDK raises a wide range of types
+        # Reporting must remain available if the optional framework or local model fails,
+        # but the reason must never be silent.
+        logger.warning("Agent Framework assessment failed (%s: %s); using the deterministic fallback", type(error).__name__, error)
+
         assessment = _fallback_assessment(events)
 
         generator = "safe-fallback"
 
     assessment["knowledge_ids"] = [item["id"] for item in knowledge]
 
-    return render_report(events, assessment, language, generator)
+    draft = render_report(events, assessment, language, generator)
+
+    if generator == "safe-fallback": # No model reached the assessment, so none is asked for the prose
+        return draft
+
+    return _with_model_narrative(draft, events, assessment, knowledge, language, alias)
 
 def main() -> None: # Command line entry point for generating, displaying, and optionally posting a sample weekly report
     parser = argparse.ArgumentParser(description = __doc__)

@@ -32,7 +32,7 @@ events/
 monitor_state.json
 *_state.json
 
-# Hive-specific development models
+# Hive specific development models
 results/HIVE*_isolation.joblib
 results/hive_profiles/
 
@@ -40,6 +40,7 @@ results/hive_profiles/
 .env
 .env.*
 !.env.example
+.claude/
 
 # macOS
 .DS_Store

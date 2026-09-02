@@ -41,12 +41,15 @@ class ExportTest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def test_alarm_csv_is_excel_compatible(self):
+        self.store.acknowledge(self.event.id, "no_issue_found", "Ana arı görüldü.")
         content, media_type, filename = build_export(self.store, "alarms", "csv")
         self.assertTrue(content.startswith(b"\xef\xbb\xbf"))
         rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
-        self.assertEqual(rows[0]["hive_name"], "Deneme Kovanı")
+        self.assertEqual(rows[0]["hive_name"], "Çayır Kovanı")
         self.assertEqual(rows[0]["status"], "ALARM")
         self.assertEqual(rows[0]["consecutive_anomalies"], "30")
+        self.assertEqual(rows[0]["inspection_result"], "no_issue_found")
+        self.assertEqual(rows[0]["inspection_note"], "Ana arı görüldü.")
         self.assertEqual(media_type, "text/csv; charset=utf-8")
         self.assertTrue(filename.endswith(".csv"))
 
@@ -58,6 +61,8 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(reports[0]["language"], "tr")
         self.assertEqual(reports[0]["generator"], "manual")
         self.assertEqual(reports[0]["grounding_sources"], ["alarm-inspection"])
+        self.assertEqual(reports[0]["report_type"], "weekly")
+        self.assertIsNone(reports[0]["event_id"])
         self.assertEqual(media_type, "application/json; charset=utf-8")
         self.assertTrue(filename.endswith(".json"))
 

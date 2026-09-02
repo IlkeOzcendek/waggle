@@ -8,11 +8,20 @@ from pathlib import Path
 from types import SimpleNamespace # easily reaching the objects
 from unittest.mock import patch # replacing function or obj with a fake one
 
-from fastapi import HTTPException 
+from fastapi import HTTPException , Request
 
 from panel.app import main
+
 from panel.app.database import EventStore # To managing the events of data
 from panel.app.models import DeviceCreate, HealthConfirmationIn, HiveCreate
+
+
+def signed_in_request(username: str) -> Request:
+    """A Request carrying only what the endpoint reads: the signed-in username."""
+    request = Request({"type": "http", "headers": [], "method": "POST", "path": "/"})
+    request.state.username = username
+    return request
+
 
 class SensorRecordingTest(unittest.TestCase):
     def setUp(self): # runs before each test to prepare, temp database and fake ONNX model folder
@@ -133,13 +142,18 @@ class SensorRecordingTest(unittest.TestCase):
         
         with patch.object(main, "store", self.store):
             first = main.create_health_confirmation(
-                hive.hive_id, HealthConfirmationIn(evidence="queen_seen")
+                hive.hive_id, HealthConfirmationIn(evidence="queen_seen"), signed_in_request("ilke")
             )
 
             self.assertTrue(first.accepted_for_enrollment)
+            # The field check is what unlocks more training data, so the panel records
+            # which account vouched for it.
+            self.assertEqual(first.confirmed_by, "ilke")
             with self.assertRaises(HTTPException) as caught:
                 main.create_health_confirmation(
-                    hive.hive_id, HealthConfirmationIn(evidence = "brood_healthy")
+                    hive.hive_id,
+                    HealthConfirmationIn(evidence="brood_healthy"),
+                    signed_in_request("ilke"),
                 )
 
         self.assertEqual(caught.exception.status_code, 409)

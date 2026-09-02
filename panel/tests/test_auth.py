@@ -1,8 +1,9 @@
+import base64
 import unittest
 from unittest.mock import patch
 
 from panel.app import auth
-from panel.app.auth import LoginAttemptGuard, create_session, read_session, security_warnings, validate_security_config, verify_credentials, verify_device_key
+from panel.app.auth import REMEMBERED_SESSION_SECONDS, SESSION_SECONDS, LoginAttemptGuard, create_session, hash_password, read_session, security_warnings, validate_security_config, verify_credentials, verify_device_key, verify_password
 
 
 class AuthenticationTest(unittest.TestCase):
@@ -28,6 +29,12 @@ class AuthenticationTest(unittest.TestCase):
     def test_signed_session(self):
         token = create_session("admin")
         self.assertEqual(read_session(token), "admin")
+
+    def test_per_user_password_hash_round_trip(self):
+        salt, password_hash = hash_password("a-strong-local-password")
+        self.assertTrue(verify_password("a-strong-local-password", salt, password_hash))
+        self.assertFalse(verify_password("wrong-password", salt, password_hash))
+        self.assertNotIn("a-strong-local-password", password_hash)
 
     def test_tampered_session_is_rejected(self):
         token = create_session("admin")
@@ -55,3 +62,28 @@ class AuthenticationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RememberMeTest(unittest.TestCase):
+    """"Keep me signed in" lengthens the session; it never stores the password."""
+
+    def test_remembered_sessions_outlive_ordinary_ones(self):
+        ordinary = create_session("ilke")
+        remembered = create_session("ilke", REMEMBERED_SESSION_SECONDS)
+        self.assertEqual(read_session(ordinary), "ilke")
+        self.assertEqual(read_session(remembered), "ilke")
+
+        def expiry(token: str) -> int:
+            payload = base64.urlsafe_b64decode(
+                token.split(".", 1)[0] + "=" * (-len(token.split(".", 1)[0]) % 4)
+            )
+            return int(payload.decode().rsplit("|", 1)[1])
+
+        self.assertGreater(expiry(remembered), expiry(ordinary))
+        self.assertGreater(REMEMBERED_SESSION_SECONDS, SESSION_SECONDS)
+
+    def test_a_remembered_session_still_expires(self):
+        with patch("panel.app.auth.time.time", return_value=1_000_000):
+            token = create_session("ilke", 60)
+        with patch("panel.app.auth.time.time", return_value=1_000_000 + 61):
+            self.assertIsNone(read_session(token))

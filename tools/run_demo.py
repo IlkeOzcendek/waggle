@@ -51,7 +51,7 @@ def seed_demo(base_url: str, device_key: str, include_report: bool = True) -> No
             "status": status,
             "anomaly_fraction": anomaly_fraction,
             "consecutive_anomalies": consecutive_anomalies,
-            "source_file": "demo.wav",
+            "source_file": f"phone:{hive_id.lower()}-{now:%Y%m%d-%H%M}.wav",
         }
         response = requests.post(
             f"{base_url}/api/events", json=payload, headers=headers, timeout=5
@@ -72,6 +72,7 @@ def seed_demo(base_url: str, device_key: str, include_report: bool = True) -> No
         "hive_ids": ["H1", "H2", "H3"],
         "language": "tr",
         "generator": "deterministic-demo",
+        "report_type": "weekly",
     }
     response = requests.post(
         f"{base_url}/api/reports", json=report, headers=headers, timeout=5
@@ -108,7 +109,9 @@ def main() -> int:
         "--port",
         str(args.port),
     ]
-    process = subprocess.Popen(command)
+    demo_environment = os.environ.copy()
+    demo_environment["WAGGLE_DEMO_MODE"] = "1"
+    process = subprocess.Popen(command, env=demo_environment)
     try:
         wait_for_server(base_url, process)
         if not args.no_seed:

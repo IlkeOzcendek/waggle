@@ -22,11 +22,13 @@ def _parse_timestamp(value: str) -> datetime: # convertion to utc datetime forma
 def events_for_period(events: list[dict], period_start: datetime, period_end: datetime) -> list[dict]: # It retrieves all events and then filters and returns those within the given date and time range
     return [event for event in events if period_start <= _parse_timestamp(event["timestamp"]) <= period_end]
 
-def run_weekly_report( # It retrieves events from the last 7 days from the API, filters them to those 7 days and stops if no events are found. Then it generates and saves a Turkish report and an English report and returns both reports
+def run_period_report(
     panel_url: str,
     device_key: str,
     alias: str = "phi-3.5-mini",
     now: datetime | None = None,
+    report_type: str = "weekly",
+    event_id: int | None = None,
 ) -> list[dict]:
     
     """
@@ -37,7 +39,7 @@ def run_weekly_report( # It retrieves events from the last 7 days from the API, 
 
     period_end = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond = 0)
 
-    period_start = period_end - timedelta(days = 7)
+    period_start = period_end - (timedelta(days=1) if report_type == "daily" else timedelta(days=7))
 
     headers = {"X-Device-Key": device_key}
 
@@ -49,7 +51,13 @@ def run_weekly_report( # It retrieves events from the last 7 days from the API, 
 
     response.raise_for_status()
 
-    events = events_for_period(response.json(), period_start, period_end)
+    available_events = response.json()
+    if report_type == "event":
+        events = [event for event in available_events if event["id"] == event_id]
+        if events:
+            period_start = period_end = _parse_timestamp(events[0]["timestamp"])
+    else:
+        events = events_for_period(available_events, period_start, period_end)
     
     if not events:
         return []
@@ -67,6 +75,8 @@ def run_weekly_report( # It retrieves events from the last 7 days from the API, 
             "language": report.language,
             "generator": report.generator,
             "grounding_sources": report.assessment.get("knowledge_ids", []),
+            "report_type": report_type,
+            "event_id": event_id if report_type == "event" else None,
         }
 
         posted = requests.post( # It sends or registers the payload report we prepared to the API and then place the response from the API into the posted file
@@ -83,6 +93,11 @@ def run_weekly_report( # It retrieves events from the last 7 days from the API, 
     return created
 
 
+def run_weekly_report(panel_url: str, device_key: str, alias: str = "phi-3.5-mini", now: datetime | None = None) -> list[dict]:
+    """Backward-compatible weekly entry point used by the demo and tests."""
+    return run_period_report(panel_url, device_key, alias, now, "weekly")
+
+
 def main() -> None: # It gets the terminal settings and then generates weekly report and writes how many reports were generated, finishes if --watch doesn't exist and if it does then it waits the default 7 days and run again
     parser = argparse.ArgumentParser(description = __doc__)
 
@@ -91,13 +106,17 @@ def main() -> None: # It gets the terminal settings and then generates weekly re
     parser.add_argument("--model", default = "phi-3.5-mini")
     parser.add_argument("--watch", action = "store_true", help = "Keep running and generate a report every interval")
     parser.add_argument("--interval-hours", type = float, default = 168)
+    parser.add_argument("--report-type", choices=("event", "daily", "weekly"), default="weekly")
+    parser.add_argument("--event-id", type=int)
 
     args = parser.parse_args()
 
     while True:
-        reports = run_weekly_report(args.panel_url, args.device_key, args.model)
+        if args.report_type == "event" and not args.event_id:
+            parser.error("--event-id is required for an event report")
+        reports = run_period_report(args.panel_url, args.device_key, args.model, report_type=args.report_type, event_id=args.event_id)
 
-        print(f"weekly_reports_created={len(reports)}")
+        print(f"{args.report_type}_reports_created={len(reports)}")
 
         if not args.watch:
             break

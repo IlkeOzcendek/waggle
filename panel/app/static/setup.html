@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Waggle | İlk Kurulum</title>
+  <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml"><link rel="stylesheet" href="/static/styles.css?v=4"><link rel="stylesheet" href="/static/login.css?v=12">
+</head>
+<body class="login-page">
+  <main class="auth-shell">
+    <section class="auth-story" aria-label="Waggle">
+      <div class="auth-brand"><p class="eyebrow" data-i18n="eyebrow">GÜVENLİ İLK KURULUM</p><h1>Waggle</h1><p class="auth-tagline" data-i18n="tagline">Kovan sisteminiz size ait.<br>İlk sahibi güvenle oluşturun.</p></div>
+      <div class="acoustic-hero" aria-hidden="true"><div class="honeycomb honeycomb-left"></div><div class="honeycomb honeycomb-right"></div><div class="sound-wave"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><img src="/static/waggle-bee-v2.png?v=5" alt="" class="waggle-bee"></div>
+      <div class="auth-benefits"><div><span class="benefit-icon">◎</span><strong data-i18n="private">Yerel hesap</strong></div><div><span class="benefit-icon">▣</span><strong data-i18n="protected">Güvenli parola</strong></div><div><span class="benefit-icon">⌂</span><strong data-i18n="one_time">Tek seferlik kurulum</strong></div></div>
+    </section>
+    <section class="auth-card setup-card" aria-labelledby="setup-title">
+      <div class="auth-card-top"><p class="system-ready"><span></span><span data-i18n="ready">Kuruluma hazır</span></p><button id="login-language" type="button" class="login-language" aria-label="Dili değiştir">EN</button></div>
+      <div class="auth-heading"><h2 id="setup-title" data-i18n="title">Sistem sahibi oluşturun</h2><p data-i18n="hint">Bu hesap kovanlarınızı ve cihazlarınızı yönetecek.</p></div>
+      <form id="setup-form" class="auth-form">
+        <label for="display-name" data-i18n="name">Adınız</label><div class="input-shell"><svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 19c.7-4 3-6 6.5-6s5.8 2 6.5 6"></path></svg><input id="display-name" autocomplete="name" required minlength="2" maxlength="80"></div>
+        <label for="username" data-i18n="username">Kullanıcı adı</label><div class="input-shell"><svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M15.5 12v2.2c0 1.1.8 1.8 1.8 1.8 1.5 0 2.7-1.8 2.7-4a8 8 0 1 0-2.4 5.7"></path><circle cx="12" cy="12" r="3"></circle></svg><input id="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]+"></div>
+        <label for="password" data-i18n="password">Parola</label><div class="input-shell"><svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10" width="13" height="10" rx="2.5"></rect><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path></svg><input id="password" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></div>
+        <label for="password-confirm" data-i18n="confirm">Parolayı doğrulayın</label><div class="input-shell"><svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10" width="13" height="10" rx="2.5"></rect><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path></svg><input id="password-confirm" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></div>
+        <div id="setup-error" class="login-error" role="alert" hidden><span class="login-error-mark" aria-hidden="true">!</span><div><strong data-i18n="setup_error">Hesap oluşturulamadı</strong><p id="setup-error-text"></p></div></div><button class="primary-button login-button" type="submit" data-i18n="create">Sistem sahibi hesabını oluştur</button>
+      </form>
+      <p class="setup-note" data-i18n="note">Parolanız yalnızca bu cihazdaki yerel Waggle veritabanında güvenli bir özet olarak saklanır.</p><a class="back-to-login" href="/login" data-i18n="back">← Girişe dön</a>
+    </section>
+  </main>
+  <script src="/static/setup.js?v=2"></script>
+</body>
+</html>

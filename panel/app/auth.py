@@ -19,6 +19,9 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 COOKIE_NAME = "waggle_session"
 SESSION_SECONDS = int(os.getenv("WAGGLE_SESSION_SECONDS", "28800"))
+# Opt-in longer session for "keep me signed in". It extends the session; it never stores
+# the password — remembering that is the browser's job, not the panel's.
+REMEMBERED_SESSION_SECONDS = int(os.getenv("WAGGLE_REMEMBERED_SESSION_SECONDS", "2592000"))
 ADMIN_USERNAME = os.getenv("WAGGLE_ADMIN_USERNAME", "admin")
 DEVICE_KEY_HEADER = "X-Device-Key"
 _DEVICE_KEY = os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo")
@@ -76,6 +79,55 @@ class LoginAttemptGuard:
 login_attempt_guard = LoginAttemptGuard(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS)
 
 
+def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
+    """Return a per-user PBKDF2 salt and hash encoded for SQLite storage."""
+    password_salt = salt or secrets.token_bytes(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), password_salt, 310_000
+    )
+    return (
+        base64.urlsafe_b64encode(password_salt).decode("ascii"),
+        base64.urlsafe_b64encode(password_hash).decode("ascii"),
+    )
+
+
+# Unambiguous alphabet: no 0/O/1/I/l, because this code is read off paper and typed back
+# in by hand, often months later. 24 characters from 32 symbols is ~120 bits of entropy.
+RECOVERY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+RECOVERY_GROUPS = 6
+RECOVERY_GROUP_SIZE = 4
+
+
+def generate_recovery_code() -> str:
+    """A single-use code that can reset a password when there is no e-mail to send to."""
+    characters = [
+        secrets.choice(RECOVERY_ALPHABET)
+        for _ in range(RECOVERY_GROUPS * RECOVERY_GROUP_SIZE)
+    ]
+    groups = [
+        "".join(characters[index : index + RECOVERY_GROUP_SIZE])
+        for index in range(0, len(characters), RECOVERY_GROUP_SIZE)
+    ]
+    return "-".join(groups)
+
+
+def normalize_recovery_code(code: str) -> str:
+    """Accept the code however it was retyped: lower case, spaces, missing dashes."""
+    return "".join(character for character in code.upper() if character.isalnum())
+
+
+def verify_password(password: str, encoded_salt: str, encoded_hash: str) -> bool:
+    try:
+        salt = base64.urlsafe_b64decode(encoded_salt.encode("ascii"))
+        expected = base64.urlsafe_b64decode(encoded_hash.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        return False
+    candidate = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, 310_000
+    )
+    return hmac.compare_digest(candidate, expected)
+
+
 def security_warnings() -> list[str]:
     warnings = []
     if _PASSWORD == "waggle-demo":
@@ -107,8 +159,8 @@ def verify_device_key(device_key: str | None) -> bool:
     return bool(device_key) and hmac.compare_digest(device_key, _DEVICE_KEY)
 
 
-def create_session(username: str) -> str:
-    expires_at = int(time.time()) + SESSION_SECONDS
+def create_session(username: str, seconds: int | None = None) -> str:
+    expires_at = int(time.time()) + (seconds or SESSION_SECONDS)
     payload = f"{username}|{expires_at}".encode()
     signature = hmac.new(_SESSION_SECRET, payload, hashlib.sha256).digest()
     encoded_payload = base64.urlsafe_b64encode(payload).decode().rstrip("=")
