@@ -30,8 +30,6 @@ const loginCopy = {
     recovery_terminal: "On the computer running the panel, in the project folder, run:",
     recovery_mismatch: "The new passwords do not match", recovery_failed: "Password could not be reset",
     recovery_done: "Your password has been set. You can sign in now.",
-    demo_account: "Demo account",
-    demo_account_note: "Signing in with this account opens the panel on the demo channel. Signing in with an account you created opens the real user view.",
   },
   tr: {
     eyebrow: "EDGE AI KOVAN İZLEME", tagline: "Kovanınızın bir sesi var.<br>Waggle değiştiğinde anlar.",
@@ -47,8 +45,6 @@ const loginCopy = {
     recovery_terminal: "Panelin çalıştığı bilgisayarda proje klasöründe şu komutu çalıştırın:",
     recovery_mismatch: "Yeni parolalar eşleşmiyor", recovery_failed: "Parola sıfırlanamadı",
     recovery_done: "Parolanız belirlendi. Şimdi giriş yapabilirsiniz.",
-    demo_account: "Demo hesabı",
-    demo_account_note: "Bu hesapla girdiğinizde panel demo kanalında açılır. Oluşturduğunuz kendi hesabınızla girerseniz gerçek kullanıcı görünümü açılır.",
   },
 };
 
@@ -79,9 +75,6 @@ fetch("/api/setup-status")
     // On a demo server setup is not *required* — the demo account is already there — but
     // the link stays so a real owner account can be registered next to it.
     setupInvitation.hidden = !(status.setup_required || status.setup_available);
-    const demoHint = document.querySelector("#demo-account-hint");
-    demoHint.hidden = !status.demo_mode;
-    if (status.demo_username) document.querySelector("#demo-account-username").textContent = status.demo_username;
   })
   .catch(() => { setupInvitation.hidden = true; });
 

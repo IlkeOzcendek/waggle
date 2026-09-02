@@ -220,10 +220,19 @@ section + section { margin-top: 44px; }
 .report-page-card h3,.report-side-column h3 { margin: 0; font: 600 22px Georgia,serif; letter-spacing: -.01em; }
 .report-section-label { margin: 0 0 8px !important; color: #bf650c !important; font: 850 11px/1.2 inherit !important; letter-spacing: .13em; text-transform: uppercase; }
 .report-chart-card .report-section-label,.report-side-column .report-section-label,.report-metric-intro .report-section-label { color: #978d80 !important; font-size: 10px !important; }
-.report-verdict { display: flex; max-width: 860px; align-items: center; gap: 18px; margin: 24px 0 0; padding: 22px 26px; border: 1px solid #e0dace; border-radius: 16px; background: #fbf9f4; }
-.report-verdict-mark { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #eeeae1; color: #8a8279; font-size: 20px; font-weight: 900; }
-.report-verdict strong { display: block; color: #4a5262; font: 600 24px/1.25 Georgia,serif; letter-spacing: -.015em; }
-.report-verdict small { display: block; margin-top: 7px; color: #837b70; font-size: 12px; line-height: 1.5; }
+/* This is the answer to the only question the page exists to answer, so it leads and it
+   is allowed to be the loudest thing in the card. Everything below is supporting. */
+.report-verdict { display: flex; max-width: 860px; align-items: center; gap: 22px; margin: 22px 0 0; padding: 28px 30px; border: 1px solid #e0dace; border-radius: 18px; background: #fbf9f4; }
+.report-verdict > div:first-of-type { flex: 1 1 auto; min-width: 0; }
+.report-verdict-action:not(:empty) { flex: 0 0 auto; padding-left: 22px; border-left: 1px solid #e6dfd3; }
+.report-verdict-open { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 12px 20px; border: 1px solid transparent; border-radius: 12px; background: #c22f29; color: #fff; font-size: 13px; font-weight: 800; white-space: nowrap; box-shadow: 0 6px 16px rgba(194,47,41,.22); transition: background .2s, box-shadow .2s, transform .2s; }
+.report-verdict-open svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.report-verdict-open:hover { background: #a52b25; box-shadow: 0 9px 20px rgba(194,47,41,.28); transform: translateY(-1px); }
+.report-verdict.watch .report-verdict-open { background: #b5771a; box-shadow: 0 6px 16px rgba(181,119,26,.22); }
+.report-verdict.watch .report-verdict-open:hover { background: #96620f; }
+.report-verdict-mark { display: grid; width: 54px; height: 54px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #eeeae1; color: #8a8279; font-size: 25px; font-weight: 900; }
+.report-verdict strong { display: block; color: #3f4756; font: 600 29px/1.2 Georgia,serif; letter-spacing: -.02em; }
+.report-verdict small { display: block; margin-top: 9px; color: #6f675e; font-size: 12.5px; line-height: 1.5; }
 .report-verdict.alarm { border-color: #eab5b0; background: linear-gradient(100deg,#fff1ef,#fff9f6); }
 .report-verdict.alarm .report-verdict-mark { background: #fbdedb; color: #c22f29; box-shadow: 0 0 0 6px rgba(202,55,49,.07); animation: alarm-dot-pulse 2s ease-in-out infinite; }
 .report-verdict.alarm strong { color: #9a2b26; }
@@ -233,37 +242,58 @@ section + section { margin-top: 44px; }
 .report-verdict.normal { border-color: #bfe0d2; background: linear-gradient(100deg,#f4fbf7,#fdfffe); }
 .report-verdict.normal .report-verdict-mark { background: #d9f0e5; color: #1c7a56; box-shadow: 0 0 0 6px rgba(32,169,116,.09); }
 .report-verdict.normal strong { color: #1f6d53; }
-.report-hive-states { display: grid; max-width: 860px; grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: 14px; margin-top: 24px; }
-.report-hive-state { min-width: 0; padding: 18px 20px; border: 1px solid #e4ddd2; border-radius: 15px; background: #fdfcfa; }
-.report-hive-state-name { display: flex; align-items: center; gap: 9px; color: #5a6472; font-size: 12px; font-weight: 750; }
+/* Demoted from three hero cards to a reference strip: the verdict already said what
+   matters, these just let you check each hive at a glance. Flat backgrounds and a
+   coloured edge instead of three competing tints. */
+.report-hive-states { display: grid; max-width: 860px; grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: 10px; margin-top: 22px; }
+.report-hive-state { min-width: 0; padding: 13px 15px 13px 16px; border: 1px solid #e9e2d7; border-left: 3px solid #cfc7ba; border-radius: 4px 12px 12px 4px; background: #fff; }
+/* One glyph tinted by the card state, so it works for any hive name. It rides with
+   the name rather than the verdict, which needs the full column width. */
+.report-hive-glyph { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; color: #a8a094; }
+.report-hive-glyph svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.report-hive-glyph .glyph-frame { stroke-width: 1.5; opacity: .45; }
+.report-hive-glyph .glyph-door { fill: currentColor; opacity: .2; stroke: none; }
+.report-hive-state-name { display: flex; align-items: center; gap: 8px; color: #5a6472; font-size: 11.5px; font-weight: 750; }
 .report-hive-state-name i { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%; background: #b3aa9c; }
-.report-hive-state strong { display: block; margin: 12px 0 6px; color: #495260; font: 600 21px Georgia,serif; }
-.report-hive-state small { color: #8a8279; font-size: 12px; }
-.report-hive-state.normal { border-color: #cfe6da; background: #f8fcfa; }.report-hive-state.normal i { background: #1c8a5f; }.report-hive-state.normal .report-hive-state-name,.report-hive-state.normal strong { color: #1c7a56; }
-.report-hive-state.watch { border-color: #eed9b2; background: #fffcf5; }.report-hive-state.watch i { background: #dd9421; }.report-hive-state.watch .report-hive-state-name,.report-hive-state.watch strong { color: #a26a10; }
-.report-hive-state.alarm { border-color: #f0c9c5; background: #fff8f6; }.report-hive-state.alarm i { background: #c22f29; }.report-hive-state.alarm .report-hive-state-name,.report-hive-state.alarm strong { color: #a52b25; }
-.report-page-card .report-summary { max-width: 68ch; margin: 28px 0 0; padding: 26px 30px; border-left: 4px solid #dda253; border-radius: 0 14px 14px 0; background: #fffaf1; color: #3d4653; font: 18px/1.72 Georgia,serif; }
+.report-hive-state strong { display: block; margin: 9px 0 0; color: #495260; font-size: 15px; font-weight: 800; letter-spacing: -.005em; }
+.report-hive-state small { display: block; margin-top: 7px; color: #7b7369; font-size: 11.5px; font-weight: 700; }
+.report-hive-state.normal .report-hive-glyph { color: #1c8a5f; }
+.report-hive-state.normal { border-color: #e9e2d7; border-left-color: #2ea87c; background: #fbfefc; }.report-hive-state.normal i { background: #2ea87c; }.report-hive-state.normal strong { color: #1c7a56; }
+.report-hive-state.watch .report-hive-glyph { color: #c78a1c; }
+.report-hive-state.watch { border-color: #e9e2d7; border-left-color: #dd9421; background: #fffdf8; }.report-hive-state.watch i { background: #dd9421; }.report-hive-state.watch strong { color: #a26a10; }
+.report-hive-state.alarm .report-hive-glyph { color: #c22f29; }
+.report-hive-state.alarm { border-color: #e9e2d7; border-left-color: #c22f29; background: #fffbfa; }.report-hive-state.alarm i { background: #c22f29; }.report-hive-state.alarm strong { color: #a52b25; }
+/* The block now says what it is. The model wrote this prose, and naming it keeps that
+   claim visible next to the words themselves. */
+.report-summary-block { display: grid; max-width: 860px; grid-template-columns: auto minmax(0,1fr); align-items: start; column-gap: 20px; margin: 28px 0 0; padding: 24px 28px 26px; border-left: 4px solid #dda253; border-radius: 0 14px 14px 0; background: #fffaf1; }
+.report-summary-mark { display: grid; width: 52px; height: 52px; place-items: center; color: #c08b32; }
+.report-summary-mark svg { width: 52px; height: 52px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.report-summary-mark .glyph-frame { stroke-width: 1.2; opacity: .55; }
+.report-summary-block .report-section-label { color: #b0782a !important; }
+.report-page-card .report-summary { max-width: 68ch; margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; background: none; color: #464f5c; font: 16px/1.68 Georgia,serif; }
 .report-section-divider { max-width: 860px; height: 1px; margin: 38px 0; background: linear-gradient(90deg,#e4dccf,#ece6dc 55%,transparent); }
 .report-page-card .report-actions { display: grid; max-width: 860px; gap: 13px; margin: 26px 0 0; padding: 0; list-style: none; counter-reset: report-action; }
-.report-page-card .report-actions li { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 16px 20px; border: 1px solid #e2dbd0; border-radius: 13px; background: #fdfcfa; color: #3f4854; font-size: 14px; line-height: 1.55; counter-increment: report-action; transition: border-color .2s,background .2s; }
+.report-page-card .report-actions li { display: grid; grid-template-columns: 34px minmax(0,1fr) auto auto; align-items: center; gap: 14px; padding: 13px 18px; border: 1px solid #e2dbd0; border-radius: 13px; background: #fdfcfa; color: #3f4854; font-size: 14px; line-height: 1.55; counter-increment: report-action; transition: border-color .2s,background .2s; }
 .report-page-card .report-actions li::before { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: #eee9e0; color: #7d7466; content: counter(report-action); font: 600 15px Georgia,serif; }
-.report-page-card .report-actions li p { margin: 4px 0 0; }
-.report-action-tag { display: block; color: #8a8279; font-size: 10px; font-weight: 850; letter-spacing: .12em; }
+.report-action-open { justify-self: end; }
+.report-page-card .report-actions li p { margin: 0; }
+.report-action-tag svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.report-action-tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid #e2dbd0; border-radius: 999px; background: #fff; color: #8a8279; font-size: 10px; font-weight: 850; letter-spacing: .1em; white-space: nowrap; }
 .report-action-open { padding: 11px 16px; border: 1px solid #ddd6ca; border-radius: 10px; background: #fff; color: #5b6472; box-shadow: none; font-size: 12px; font-weight: 800; white-space: nowrap; transition: border-color .2s,color .2s,background .2s; }
 .report-action-open:hover { border-color: #c3bbad; background: #faf8f4; }
 .report-actions li.alarm { border-color: #f0c9c5; background: #fff8f6; }
 .report-actions li.alarm::before { background: #fbdedb; color: #a52b25; }
-.report-actions li.alarm .report-action-tag { color: #c22f29; }
+.report-actions li.alarm .report-action-tag { border-color: #f0bbb6; background: #fff4f2; color: #c22f29; }
 .report-actions li.alarm .report-action-open { border-color: #e79a94; color: #a52b25; }
 .report-actions li.alarm .report-action-open:hover { background: #c22f29; border-color: #c22f29; color: #fff; }
 .report-actions li.watch { border-color: #eed9b2; background: #fffcf5; }
 .report-actions li.watch::before { background: #fbeccb; color: #a26a10; }
-.report-actions li.watch .report-action-tag { color: #b5771a; }
+.report-actions li.watch .report-action-tag { border-color: #ecd2a4; background: #fffbf0; color: #b5771a; }
 .report-actions li.watch .report-action-open { border-color: #e2bd77; color: #a26a10; }
 .report-actions li.watch .report-action-open:hover { background: #fff6e4; }
 .report-actions li.normal { border-color: #d5e6dd; background: #fbfdfc; }
 .report-actions li.normal::before { background: #dfeee7; color: #1c7a56; }
-.report-actions li.normal .report-action-tag { color: #2b7d5f; }
+.report-actions li.normal .report-action-tag { border-color: #c5e2d5; background: #f6fcf9; color: #2b7d5f; }
 .report-actions li.normal .report-action-open { border-color: #b7d8c8; color: #1c7a56; }
 .report-actions li.normal .report-action-open:hover { background: #f2faf6; }
 .report-metric-strip { display: grid; grid-template-columns: 1.3fr repeat(4,.75fr); align-items: stretch; margin-bottom: 38px; overflow: hidden; border: 1px solid #e1dacd; border-radius: 18px; background: #fffdfa; box-shadow: 0 8px 24px rgba(55,43,29,.04); }
@@ -309,7 +339,10 @@ section + section { margin-top: 44px; }
 .report-status-row.is-empty { opacity: .5; }
 .report-status-row.is-empty .report-status-name i { background: #c2bab0 !important; box-shadow: none !important; animation: none !important; }
 .report-status-row > strong { color: #303945; font-size: 15px; text-align: right; }
-.report-disclaimer { margin: 30px 0 0; padding-top: 20px; border-top: 1px solid #ece6dc; color: #827b72; font-size: 12px; line-height: 1.6; }
+/* A legal note, so it is set like one: centred, narrow enough to read in a single pass,
+   and headed by a label that says what it is instead of trailing off the last chart. */
+.report-disclaimer { display: grid; max-width: 68ch; justify-items: center; gap: 9px; margin: 36px auto 0; padding-top: 24px; border-top: 1px solid #ece6dc; color: #6f6862; font-size: 12.5px; line-height: 1.65; text-align: center; text-wrap: balance; }
+.report-disclaimer-label { display: inline-block; padding: 5px 12px; border: 1px solid #e4ddd2; border-radius: 999px; background: #faf8f3; color: #978d80; font-size: 9.5px; font-weight: 850; letter-spacing: .14em; }
 .report-side-column { display: grid; align-content: start; gap: 20px; }
 .report-side-column article { padding: 26px; border: 1px solid #e3dcd1; border-radius: 18px; background: #fff; transition: border-color .2s,box-shadow .2s; }
 .report-download-card { border-color: #e7d3b2; box-shadow: 0 10px 30px rgba(120,80,25,.07); }
@@ -328,6 +361,13 @@ section + section { margin-top: 44px; }
 .report-inspection-card:hover { border-color: #d9d0c2; }
 .report-inspection-card > p:not(.report-section-label) { margin: 9px 0 18px; color: #766d62; font-size: 12px; line-height: 1.6; }
 .inspection-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+/* A bare "0" in a box reads as broken. The icon says what the box counts even when
+   nothing has been inspected yet. */
+.inspection-row i { display: grid; width: 34px; height: 34px; place-items: center; margin: 0 auto 8px; border-radius: 11px; background: #fff; }
+.inspection-row i svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.inspection-row.confirmed i { color: #1c8a5f; box-shadow: inset 0 0 0 1px #cfe6da; }
+.inspection-row.cleared i { color: #b5771a; box-shadow: inset 0 0 0 1px #eed9b2; }
+.inspection-row.uncertain i { color: #c22f29; box-shadow: inset 0 0 0 1px #f0c9c5; }
 .inspection-row { display: grid; min-width: 0; align-content: center; justify-items: center; gap: 6px; padding: 16px 8px; border: 1px solid transparent; border-radius: 12px; background: #faf8f4; color: #8a827a; font-size: 11px; font-weight: 750; text-align: center; transition: border-color .2s,background .2s,color .2s; }
 .inspection-row strong { color: #a49a8f; font: 600 26px Georgia,serif; }
 .inspection-row.is-active { background: #fff; color: #4c5563; }
@@ -768,11 +808,46 @@ select { margin-left: 5px; padding: 8px 27px 8px 10px; border: 1px solid #d5cfc3
 
 /* Product polish: preserves the original panel structure while improving hierarchy. */
 header { align-items: center; min-height: 112px; padding-top: 29px; padding-bottom: 28px; border-bottom: 0; background: #fbf9f3; }
-.panel-brand { display: flex; align-items: center; gap: 15px; }
-.panel-logo { display: block; width: 44px; height: 44px; flex: 0 0 auto; border: 1px solid #ebdcbe; border-radius: 13px; box-shadow: 0 6px 18px rgba(190,99,13,.07); }
-.panel-brand > div { display: grid; gap: 4px; }
-.panel-brand h1 { font: 600 33px Georgia, serif; letter-spacing: -.035em; line-height: .94; }
-.panel-brand .tagline { font-size: 12px; letter-spacing: .015em; line-height: 1.35; }
+.panel-brand { display: flex; align-items: center; gap: 15px; padding: 4px; margin: -4px; border-radius: 16px; color: inherit; text-decoration: none; cursor: pointer; }
+.panel-brand:focus-visible { outline: 2px solid #d8ad72; outline-offset: 3px; }
+/* Sized to the text block beside it (57px). The wordmark is 180px of saturated amber, so
+   at 44px the mark read as a sticker stuck to a word rather than half of a pair. The
+   header does not grow: the text block was already the taller of the two. */
+.panel-logo { display: block; width: 56px; height: 56px; flex: 0 0 auto; border: 1px solid #ebdcbe; border-radius: 16px; box-shadow: 0 6px 18px rgba(190,99,13,.07); transition: transform .28s cubic-bezier(.2,.7,.3,1), border-color .28s, box-shadow .28s; }
+/* The mark is inline SVG rather than an <img> so the comb and the wings can react on
+   their own. The whole brand block is the target — the 44px logo alone is a small thing
+   to have to hit. */
+.panel-brand:hover .panel-logo { border-color: #e0ac52; box-shadow: 0 8px 22px rgba(190,99,13,.16); transform: scale(1.06); }
+.logo-comb { transition: stroke .28s, stroke-width .28s; }
+.panel-brand:hover .logo-comb { stroke: #e2a33f; stroke-width: 3.6; }
+/* One short burst, not a permanent flap: it should read as the bee noticing you.
+   The resting angles live here rather than on the SVG elements, because a CSS transform
+   replaces the presentation attribute outright and the wings would jump on the first
+   frame. fill-box keeps the pivot at each wing's own centre, which is where the original
+   rotate(-32 21 28) turned about. */
+.logo-wing { transform-box: fill-box; transform-origin: 50% 50%; transition: stroke .28s; }
+/* The wings only read as wings while they are moving, so they take the accent colour for
+   the length of the flap. */
+.panel-brand:hover .logo-wing { stroke: #d98f2a; }
+.logo-wing-left { transform: rotate(-32deg); }
+.logo-wing-right { transform: rotate(32deg); }
+.panel-brand:hover .logo-wing-left { animation: logo-wing-left .2s ease-in-out 3 alternate; }
+.panel-brand:hover .logo-wing-right { animation: logo-wing-right .2s ease-in-out 3 alternate; }
+@keyframes logo-wing-left { to { transform: rotate(-48deg) scaleY(.76); } }
+@keyframes logo-wing-right { to { transform: rotate(48deg) scaleY(.76); } }
+@media (prefers-reduced-motion: reduce) {
+  .panel-brand:hover .panel-logo { transform: none; }
+  .panel-brand:hover .logo-wing-left, .panel-brand:hover .logo-wing-right { animation: none; }
+}
+/* Georgia's descenders — the two g's in "Waggle" — drop well below the tight line box,
+   so the gap has to be bigger than it looks to keep the tagline clear of them. */
+.panel-brand > div { display: grid; gap: 9px; }
+.panel-brand h1 { font: 600 33px Georgia, serif; letter-spacing: -.035em; line-height: .94; transition: color .28s; }
+/* The wordmark is already the header's amber anchor (#8f3d0c from the global h1 rule), so
+   waking it up means lifting it a shade, not tinting it. Same lit tone as the weather
+   sun uses on hover. A glow would drown out the wing flap next to it. */
+.panel-brand:hover h1 { color: #b5620a; }
+.panel-brand .tagline { font-size: 12px; letter-spacing: .035em; line-height: 1.4; }
 .main-nav { --indicator-left: 0px; --indicator-width: 0px; --indicator-opacity: 0; position: relative; flex-wrap: nowrap; justify-content: space-between; gap: 14px; min-height: 70px; margin-top: 14px; padding-top: 10px; padding-bottom: 10px; overflow-x: auto; border-top: 1px solid #e5dfd4; background: #fffdfa; }
 .main-nav::after { content: ""; position: absolute; z-index: 4; bottom: 0; left: var(--indicator-left); width: var(--indicator-width); height: 3px; border-radius: 999px 999px 0 0; background: linear-gradient(90deg,#d97706,#efa63c); opacity: var(--indicator-opacity); pointer-events: none; transition: left .34s cubic-bezier(.22,.8,.3,1),width .34s cubic-bezier(.22,.8,.3,1),opacity .16s; }
 .nav-button { position: relative; isolation: isolate; flex: 0 1 auto; padding: 16px 18px 14px; border: 0; border-bottom: 3px solid transparent; border-radius: 11px 11px 0 0; color: #5c6571; transition: color .2s, border-color .2s, transform .2s, box-shadow .2s; }
@@ -824,7 +899,10 @@ header { align-items: center; min-height: 112px; padding-top: 29px; padding-bott
 .overview-weather-section .weather-card { display: grid; grid-template-columns: minmax(230px,1fr) auto; gap: 24px 54px; padding: 30px 34px; border-color: #e4d8c6; background: linear-gradient(115deg,#fffdf8 0%,#fbf6ec 100%); }
 .weather-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .weather-heading h2 { margin-top: 7px; font: 600 25px Georgia,serif; }
-.weather-mark { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid #ecd4a6; border-radius: 50%; background: #fff5dc; color: #d27a13; font-size: 25px; line-height: 1; }
+.weather-mark { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid #ecd4a6; border-radius: 50%; background: #fff5dc; color: #d27a13; font-size: 25px; line-height: 1; transition: border-color .25s, background .25s, color .25s, box-shadow .25s; }
+/* The sun brightens when the card is hovered. The whole card is the target, so it does
+   not depend on catching a 42px circle with the pointer. */
+.overview-weather-section .weather-card:hover .weather-mark { border-color: #e0ac52; background: #ffeec2; color: #b5620a; box-shadow: 0 0 0 7px rgba(226,163,63,.15), 0 0 20px rgba(226,163,63,.4); }
 .overview-weather-section .weather-main { display: flex; min-width: 210px; align-items: center; justify-content: flex-end; gap: 28px; margin: 0; }
 .overview-weather-section .weather-main p { max-width: 230px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; text-align: right; }
 .overview-weather-section .weather-main strong { min-width: 72px; font: 600 48px/1 Georgia,serif; text-align: right; }
@@ -840,7 +918,7 @@ header { align-items: center; min-height: 112px; padding-top: 29px; padding-bott
 @keyframes overview-alert-breathe { 50% { border-color: #da7069; box-shadow: 0 8px 24px rgba(191,44,39,.11); } }
 @keyframes overview-alert-hop { 0%,75%,100% { transform: translateY(0); } 82% { transform: translateY(-4px); } 89% { transform: translateY(0); } 94% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .mini-bee,.mini-wing,.ribbon-alarm i,.overview-alert,.overview-alert-icon,.alarm-summary-count i,.alarm-card.open .alarm-icon,.report-verdict.alarm .report-verdict-mark { animation: none; }.main-nav::after { transition: none; } }
-@media (max-width: 750px) { header { align-items: flex-start; padding: 20px 18px; }.panel-brand .tagline,.connection { display: none; }.panel-brand h1 { font-size: 27px; }.header-actions { gap: 8px; }.main-nav { padding-left: 15px; padding-right: 15px; }.overview-welcome { min-height: 112px; padding: 20px; }.overview-welcome::after { right: -20px; }.mini-bee { width: 72px; margin-right: 0; transform: scale(.82); }.status-ribbon { grid-template-columns: 1fr; }.ribbon-state { border-top: 1px solid #e6dfd3; border-left: 0; }.overview-alert { grid-template-columns: auto 1fr; }.overview-alert button { grid-column: 1 / -1; }.hive-list-row { grid-template-columns: 1fr auto; gap: 10px; }.hive-list-description { grid-column: 1 / -1; }.hive-list-time { display: none; }.hive-row-action { grid-column: 2; grid-row: 1 / span 2; } #overview-view > section + section { margin-top: 42px; } #overview-view .overview-welcome { padding: 22px; } .overview-weather-section .weather-card { grid-template-columns: 1fr; gap: 22px; padding: 24px 22px; } .overview-weather-section .weather-main { justify-content: space-between; } .overview-weather-section .weather-main p { text-align: left; } .overview-weather-section .weather-details { grid-template-columns: 1fr; } }
+@media (max-width: 750px) { header { align-items: flex-start; padding: 20px 18px; }.panel-brand .tagline,.connection { display: none; }.panel-brand h1 { font-size: 27px; }.panel-logo { width: 44px; height: 44px; border-radius: 13px; }.header-actions { gap: 8px; }.main-nav { padding-left: 15px; padding-right: 15px; }.overview-welcome { min-height: 112px; padding: 20px; }.overview-welcome::after { right: -20px; }.mini-bee { width: 72px; margin-right: 0; transform: scale(.82); }.status-ribbon { grid-template-columns: 1fr; }.ribbon-state { border-top: 1px solid #e6dfd3; border-left: 0; }.overview-alert { grid-template-columns: auto 1fr; }.overview-alert button { grid-column: 1 / -1; }.hive-list-row { grid-template-columns: 1fr auto; gap: 10px; }.hive-list-description { grid-column: 1 / -1; }.hive-list-time { display: none; }.hive-row-action { grid-column: 2; grid-row: 1 / span 2; } #overview-view > section + section { margin-top: 42px; } #overview-view .overview-welcome { padding: 22px; } .overview-weather-section .weather-card { grid-template-columns: 1fr; gap: 22px; padding: 24px 22px; } .overview-weather-section .weather-main { justify-content: space-between; } .overview-weather-section .weather-main p { text-align: left; } .overview-weather-section .weather-details { grid-template-columns: 1fr; } }
 @media (max-width: 750px) { main { padding-top: 40px; } .main-nav { justify-content: flex-start; gap: 7px; min-height: 58px; margin-top: 8px; padding-top: 6px; padding-bottom: 6px; } .nav-button { flex: 0 0 auto; padding: 13px 14px 11px; } #overview-view .overview-welcome,#overview-view .status-ribbon { margin-bottom: 32px; } }
 @media (max-width: 900px) { .managed-hive-row { grid-template-columns: 1fr auto; gap: 18px; } .managed-hive-actions { grid-column: 1 / -1; justify-content: flex-start; padding-top: 4px; } .managed-hive-row.has-enrollment { grid-template-areas: "identity meta" "actions actions" "enroll enroll"; } .enrollment-card.done .enrollment-head { flex-wrap: wrap; } .enrollment-done-score { text-align: left; } }
 @media (max-width: 750px) { .hives-page-head { padding: 24px 22px; } .hives-page-head .section-title { gap: 20px; } .managed-hive-row { grid-template-columns: 1fr; padding: 20px; } .managed-hive-row.has-enrollment { grid-template-areas: "identity" "meta" "actions" "enroll"; } .managed-hive-meta { grid-template-columns: auto auto; align-items: center; } .managed-hive-actions { grid-column: auto; flex-wrap: wrap; } .enrollment-card.done { padding: 20px; } .enrollment-done-score strong { font-size: 26px; } }
@@ -907,3 +985,19 @@ body.preview-as-worker .backup-card { display: none; }
 .workers-head-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 #preview-as-worker { min-height: 40px; padding: 10px 16px; border: 1px solid #ddd6ca; border-radius: 11px; background: #fff; color: #5b6472; box-shadow: none; font-size: 12px; font-weight: 800; transition: border-color .2s,background .2s,color .2s; }
 #preview-as-worker:hover { border-color: #d8ad72; background: #fff8ee; color: #9a4a13; }
+
+/* What the assessment rested on. A source count is a claim; the passages are the
+   evidence, and the panel already knows their ids — it only had to fetch the words. */
+.report-sources-card { display: grid; gap: 4px; padding: 26px 28px; border: 1px solid #e4ddd2; border-radius: 18px; background: #fff; box-shadow: 0 10px 26px rgba(35,42,53,.045); }
+.report-sources-card h3 { margin: 3px 0 0; font: 600 20px Georgia,serif; }
+.report-sources-card > p:not(.report-section-label) { margin: 9px 0 14px; color: #766d62; font-size: 12px; line-height: 1.6; }
+.report-sources-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.report-sources-list li { display: grid; gap: 7px; padding: 13px 15px; border: 1px solid #e9e2d7; border-left: 3px solid #d5a35f; border-radius: 4px 12px 12px 4px; background: #fffdf9; }
+.report-source-id { color: #a4762a; font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.report-sources-list p { margin: 0; color: #4a5262; font-size: 12.5px; line-height: 1.6; }
+
+/* Whether the two local models agreed is part of how much the priority can be trusted. */
+.report-cross-check:empty { display: none; }
+.report-cross-check { display: block; margin-top: 7px; padding: 7px 11px; border-radius: 9px; font-size: 11px; font-weight: 750; line-height: 1.45; }
+.report-cross-check.agreed { background: #f4fcf8; color: #2c6d54; box-shadow: inset 0 0 0 1px #cfe6da; }
+.report-cross-check.disagreed { background: #fffcf5; color: #a26a10; box-shadow: inset 0 0 0 1px #eed9b2; }

@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS health_confirmations (
 );
 CREATE INDEX IF NOT EXISTS idx_health_confirmation_hive_time ON health_confirmations(hive_id, confirmed_at DESC);
 CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY COLLATE NOCASE,
+    username TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
     password_salt TEXT NOT NULL,
     password_hash TEXT NOT NULL,
@@ -196,7 +196,7 @@ class EventStore:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN demo_account INTEGER NOT NULL DEFAULT 0"
                 )
-            self._widen_user_roles(connection)
+            self._rebuild_users_table(connection)
             settings_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(settings)")
             }
@@ -267,22 +267,26 @@ class EventStore:
             )
 
     @staticmethod
-    def _widen_user_roles(connection: sqlite3.Connection) -> None:
-        """Let the users table hold workers, not only the single owner.
+    def _rebuild_users_table(connection: sqlite3.Connection) -> None:
+        """Bring an older users table up to the current definition.
 
-        The role CHECK constraint was written when 'owner' was the only role, and SQLite
-        cannot alter a constraint in place — the table has to be rebuilt. Existing rows
-        are copied across unchanged.
+        Two things need it, and SQLite can alter neither in place. The role CHECK was
+        written when 'owner' was the only role. And the username column carried COLLATE
+        NOCASE, which folds ASCII only: "İlke" and "ilke" never matched, while "Ali" and
+        "ALi" did. Usernames are identifiers here, so they now compare exactly as typed.
+        Existing rows are copied across unchanged — a NOCASE key could not have held two
+        names that differ only by case, so nothing can collide on the way over.
         """
         definition = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
         ).fetchone()
-        if definition is None or "'worker'" in definition["sql"]:
+        sql = definition["sql"] if definition else ""
+        if definition is None or ("'worker'" in sql and "COLLATE NOCASE" not in sql):
             return
         connection.execute("ALTER TABLE users RENAME TO users_legacy")
         connection.execute(
             """CREATE TABLE users (
-                username TEXT PRIMARY KEY COLLATE NOCASE,
+                username TEXT PRIMARY KEY,
                 display_name TEXT NOT NULL,
                 password_salt TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
@@ -338,7 +342,7 @@ class EventStore:
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username,)
+                "SELECT 1 FROM users WHERE username = ?", (username,)
             ).fetchone()
             if existing:
                 return
@@ -372,7 +376,7 @@ class EventStore:
             ).fetchone():
                 raise ValueError("Sistem sahibi hesabı zaten oluşturulmuş")
             if connection.execute(
-                "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username.strip(),)
+                "SELECT 1 FROM users WHERE username = ?", (username.strip(),)
             ).fetchone():
                 raise ValueError("Bu kullanıcı adı zaten kullanılıyor")
             connection.execute(
@@ -405,7 +409,7 @@ class EventStore:
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username.strip(),)
+                "SELECT 1 FROM users WHERE username = ?", (username.strip(),)
             ).fetchone()
             if existing:
                 raise ValueError("Bu kullanıcı adı zaten kullanılıyor")
@@ -450,7 +454,7 @@ class EventStore:
             row = connection.execute(
                 """SELECT username, display_name, role, active, must_change_password,
                           demo_account
-                   FROM users WHERE username = ? COLLATE NOCASE""",
+                   FROM users WHERE username = ?""",
                 (username.strip(),),
             ).fetchone()
         if row is None:
@@ -467,7 +471,7 @@ class EventStore:
     def set_user_active(self, username: str, active: bool) -> bool:
         with self.connect() as connection:
             cursor = connection.execute(
-                "UPDATE users SET active = ? WHERE username = ? COLLATE NOCASE AND role = 'worker'",
+                "UPDATE users SET active = ? WHERE username = ? AND role = 'worker'",
                 (int(active), username.strip()),
             )
         return cursor.rowcount > 0
@@ -479,11 +483,16 @@ class EventStore:
         password_hash: str,
         must_change: bool = False,
     ) -> bool:
-        """Set a password. `must_change` marks it as a temporary one the owner issued."""
+        """Set a password. `must_change` marks it as a temporary one the owner issued.
+
+        Choosing a password also clears the demo flag: the account was only ever marked
+        because it was created with a well-known one, and that is no longer true.
+        """
         with self.connect() as connection:
             cursor = connection.execute(
-                """UPDATE users SET password_salt = ?, password_hash = ?, must_change_password = ?
-                WHERE username = ? COLLATE NOCASE""",
+                """UPDATE users SET password_salt = ?, password_hash = ?,
+                       must_change_password = ?, demo_account = 0
+                WHERE username = ?""",
                 (password_salt, password_hash, int(must_change), username.strip()),
             )
         return cursor.rowcount > 0
@@ -495,7 +504,7 @@ class EventStore:
             cursor = connection.execute(
                 """UPDATE users
                 SET recovery_salt = ?, recovery_hash = ?, recovery_created_at = ?
-                WHERE username = ? COLLATE NOCASE""",
+                WHERE username = ?""",
                 (code_salt, code_hash, created_at.isoformat(), username.strip()),
             )
         return created_at.isoformat() if cursor.rowcount else None
@@ -503,7 +512,7 @@ class EventStore:
     def recovery_code_state(self, username: str) -> tuple[bool, datetime | None]:
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT recovery_hash, recovery_created_at FROM users WHERE username = ? COLLATE NOCASE",
+                "SELECT recovery_hash, recovery_created_at FROM users WHERE username = ?",
                 (username.strip(),),
             ).fetchone()
         if row is None or not row["recovery_hash"]:
@@ -514,7 +523,7 @@ class EventStore:
     def recovery_credentials(self, username: str) -> tuple[str, str] | None:
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT recovery_salt, recovery_hash FROM users WHERE username = ? COLLATE NOCASE",
+                "SELECT recovery_salt, recovery_hash FROM users WHERE username = ?",
                 (username.strip(),),
             ).fetchone()
         if row is None or not row["recovery_hash"] or not row["recovery_salt"]:
@@ -533,8 +542,9 @@ class EventStore:
             cursor = connection.execute(
                 """UPDATE users
                 SET password_salt = ?, password_hash = ?, must_change_password = 0,
+                    demo_account = 0,
                     recovery_salt = NULL, recovery_hash = NULL, recovery_created_at = NULL
-                WHERE username = ? COLLATE NOCASE AND recovery_hash IS NOT NULL""",
+                WHERE username = ? AND recovery_hash IS NOT NULL""",
                 (password_salt, password_hash, username.strip()),
             )
         return cursor.rowcount > 0
@@ -543,7 +553,7 @@ class EventStore:
         with self.connect() as connection:
             row = connection.execute(
                 """SELECT display_name, password_salt, password_hash
-                FROM users WHERE username = ? COLLATE NOCASE""",
+                FROM users WHERE username = ?""",
                 (username.strip(),),
             ).fetchone()
         if row is None:

@@ -20,9 +20,12 @@ class EventStoreTest(unittest.TestCase):
         salt, password_hash = hash_password("owner-password-123")
         self.store.create_owner("İlke", "ilke", salt, password_hash)
         self.assertTrue(self.store.has_users())
-        stored = self.store.user_credentials("ILKE")
+        stored = self.store.user_credentials("ilke")
         self.assertEqual(stored[0], "İlke")
         self.assertTrue(verify_password("owner-password-123", stored[1], stored[2]))
+        # Usernames are identifiers, matched exactly as typed.
+        self.assertIsNone(self.store.user_credentials("ILKE"))
+        self.assertIsNone(self.store.user_credentials("İlke"))
         with self.assertRaises(ValueError):
             self.store.create_owner("Başka", "another", salt, password_hash)
 

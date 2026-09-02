@@ -179,14 +179,14 @@ class WorkerAccountTest(unittest.TestCase):
             self.assertEqual(worker.get("/api/users").status_code, 403)
             worker.close()
 
-    def test_usernames_cannot_collide(self):
+    def test_the_same_username_cannot_be_taken_twice(self):
         self.owner.post(
             "/api/users",
             json={"display_name": "Ayşe", "username": "ayse", "password": "gecici-parola-123"},
         )
         duplicate = self.owner.post(
             "/api/users",
-            json={"display_name": "Başkası", "username": "AYSE", "password": "gecici-parola-123"},
+            json={"display_name": "Başkası", "username": "ayse", "password": "gecici-parola-123"},
         )
         self.assertEqual(duplicate.status_code, 409)
         owner_name = self.owner.post(
@@ -194,6 +194,32 @@ class WorkerAccountTest(unittest.TestCase):
             json={"display_name": "Sahte", "username": "ilke", "password": "gecici-parola-123"},
         )
         self.assertEqual(owner_name.status_code, 409)
+
+    def test_usernames_differing_only_by_case_are_separate_accounts(self):
+        """Deliberate: a username is matched exactly, so "Ayse" is not "ayse"."""
+        self.owner.post(
+            "/api/users",
+            json={"display_name": "Ayşe", "username": "ayse", "password": "gecici-parola-123"},
+        )
+        other = self.owner.post(
+            "/api/users",
+            json={"display_name": "Ayşe B.", "username": "Ayse", "password": "gecici-parola-456"},
+        )
+        self.assertEqual(other.status_code, 201)
+        usernames = [user["username"] for user in self.store.users()]
+        self.assertIn("ayse", usernames)
+        self.assertIn("Ayse", usernames)
+        # And each signs in only with its own password.
+        first = TestClient(main.app)
+        self.assertEqual(
+            first.post("/api/login", json={"username": "ayse", "password": "gecici-parola-456"}).status_code,
+            401,
+        )
+        self.assertEqual(
+            first.post("/api/login", json={"username": "ayse", "password": "gecici-parola-123"}).status_code,
+            200,
+        )
+        first.close()
 
 
 if __name__ == "__main__":

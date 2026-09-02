@@ -60,8 +60,19 @@ class SetupFlowTest(unittest.TestCase):
             "/api/login", json={"username": "ilke", "password": "wrong-password"}
         )
         self.assertEqual(bad_login.status_code, 401)
+        # A different casing is a different identifier: SQLite's NOCASE used to accept
+        # "ILKE" here while rejecting "İlke" for a user registered as "ilke", which is
+        # backwards for Turkish. Exact matching removes the guesswork entirely.
+        for typed in ("ILKE", "İlke", "Ilke"):
+            with self.subTest(typed=typed):
+                self.assertEqual(
+                    fresh_client.post(
+                        "/api/login", json={"username": typed, "password": "strong-password-123"}
+                    ).status_code,
+                    401,
+                )
         good_login = fresh_client.post(
-            "/api/login", json={"username": "ILKE", "password": "strong-password-123"}
+            "/api/login", json={"username": "ilke", "password": "strong-password-123"}
         )
         self.assertEqual(good_login.status_code, 200)
         fresh_client.close()
@@ -116,8 +127,9 @@ class SetupFlowTest(unittest.TestCase):
                 self.assertEqual(demo["username"], main.ADMIN_USERNAME)
                 self.assertIs(demo["demo_mode"], True)
 
-    def test_seeded_demo_owner_cannot_sign_in_once_demo_mode_is_off(self):
-        """A panel that once ran a demo must not keep a well-known password alive."""
+    def test_seeded_demo_owner_signs_in_with_demo_mode_off(self):
+        """The demo account is always reachable — being locked out of it is worse than the
+        weak default it starts with, which is why start-up warns about it instead."""
         with patch.object(main, "DEMO_MODE", True):
             with TestClient(main.app) as demo_client:
                 self.assertEqual(
@@ -127,13 +139,42 @@ class SetupFlowTest(unittest.TestCase):
                     ).status_code,
                     200,
                 )
-        # Same database, demo mode off: the seeded row is inert.
+        # Same database, demo mode off: the account still signs in.
+        signed_in = TestClient(main.app)
         self.assertEqual(
-            TestClient(main.app)
-            .post("/api/login", json={"username": main.ADMIN_USERNAME, "password": main.DEMO_PASSWORD})
-            .status_code,
-            401,
+            signed_in.post(
+                "/api/login", json={"username": main.ADMIN_USERNAME, "password": main.DEMO_PASSWORD}
+            ).status_code,
+            200,
         )
+        # But it is no longer presented as a demo channel.
+        self.assertIs(signed_in.get("/api/me").json()["demo_mode"], False)
+        signed_in.close()
+
+    def test_choosing_a_password_clears_the_demo_flag(self):
+        with patch.object(main, "DEMO_MODE", True):
+            with TestClient(main.app) as demo_client:
+                demo_client.post(
+                    "/api/login",
+                    json={"username": main.ADMIN_USERNAME, "password": main.DEMO_PASSWORD},
+                )
+                self.assertTrue(
+                    next(u for u in self.store.users() if u["username"] == main.ADMIN_USERNAME)["demo_account"]
+                )
+                self.assertEqual(
+                    demo_client.post(
+                        "/api/password",
+                        json={"current_password": main.DEMO_PASSWORD, "new_password": "kendi-parolam-123"},
+                    ).status_code,
+                    204,
+                )
+        # The account was only flagged because of the password it was born with.
+        self.assertFalse(
+            next(u for u in self.store.users() if u["username"] == main.ADMIN_USERNAME)["demo_account"]
+        )
+        # And it now counts as a registered owner, so first-time setup closes: an account
+        # with a password its holder chose is not a seeded placeholder any more.
+        self.assertFalse(self.client.get("/api/setup-status").json()["setup_available"])
 
     def test_seeded_demo_owner_does_not_block_first_time_setup(self):
         with patch.object(main, "DEMO_MODE", True):

@@ -13,7 +13,8 @@ from urllib.parse import urlparse # It tells a host-only endpoint override apart
 import argparse
 import asyncio # It runs the asynchronous Agent Framework assessment from synchronous code
 import json
-import logging # It records why an optional model path degraded to the deterministic fallback
+import logging
+from functools import lru_cache # It records why an optional model path degraded to the deterministic fallback
 import os
 import re
 
@@ -22,7 +23,7 @@ import unicodedata # It folds Turkish text so an uppercase hedge is still recogn
 
 import requests
 
-from brain.local_rag import retrieve_guidance
+from brain.local_rag import event_profile, retrieve_guidance, search_guidance
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,28 @@ def _foundry_connection(alias: str) -> tuple[str, str]: # It ensures the request
         )
 
         return load_and_probe()
+
+@lru_cache(maxsize=8)
+def _model_supports_tools(alias: str) -> bool:
+    """Whether this local model can call tools at all.
+
+    Foundry's catalogue reports it per model, and most of the small ones cannot. Attaching
+    tools to a model that cannot call them is not harmless: the instructions describing
+    them eat context and invite a small model to answer with a tool name instead of the
+    single token the pipeline expects. Better to ask first and adapt.
+    """
+    try:
+        listing = _run_foundry("model", "list")
+    except Exception as error:  # noqa: BLE001 - the CLI may be absent or slow to start
+        logger.warning("Could not read the Foundry model list (%s); assuming no tool support", type(error).__name__)
+        return False
+    for line in listing.splitlines():
+        cells = [cell.strip() for cell in line.split("|")]
+        # | name | type | size | device | tools | cached |
+        if len(cells) >= 7 and cells[1] == alias:
+            return "\u25cf" in cells[5]
+    return False
+
 
 def _extract_json(text: str) -> dict: # It extracts the first JSON object from model text and rejects non dictionary output
 
@@ -257,6 +280,51 @@ async def assess_with_agent_framework( # The alternative path that performs the 
 
     base_url, model_id = _foundry_connection(alias)
 
+    # Tools, rather than one pre-filled prompt: the agent decides what it still needs to
+    # know. Every tool is a pure read over data the panel already holds — none of them can
+    # change anything, so a confused model can waste a turn but never cause harm.
+    tool_calls: list[str] = []
+
+    def look_up_guidance(query: str) -> str:
+        """Search the beekeeper's reviewed local guidance notes for a topic.
+
+        Args:
+            query: What to look for, such as "swarming" or "queen loss" or "varroa".
+        """
+        tool_calls.append(f"look_up_guidance({query!r})")
+        found = search_guidance(query, "en", limit=3)
+        return json.dumps(found) if found else "No guidance matches that topic."
+
+    def hive_history(hive_id: str) -> str:
+        """Return how one hive behaved across the period being assessed.
+
+        Args:
+            hive_id: The hive identifier, for example "H3".
+        """
+        tool_calls.append(f"hive_history({hive_id!r})")
+        own = [event for event in events if event.get("hive_id") == hive_id]
+        if not own:
+            return f"No records for {hive_id} in this period."
+        fractions = [float(event.get("anomaly_fraction") or 0) for event in own]
+        runs = [int(event.get("consecutive_anomalies") or 0) for event in own]
+        return json.dumps({
+            "hive_id": hive_id,
+            "records": len(own),
+            "statuses": sorted({str(event.get("status", "")).upper() for event in own}),
+            "highest_anomaly_fraction": round(max(fractions), 3),
+            "mean_anomaly_fraction": round(sum(fractions) / len(fractions), 3),
+            "longest_anomalous_run": max(runs),
+        })
+
+    def period_overview() -> str:
+        """Return the shape of the whole period: which hives, how loud, how sustained."""
+        tool_calls.append("period_overview()")
+        return json.dumps(event_profile(events), default=sorted)
+
+    tools = [look_up_guidance, hive_history, period_overview] if _model_supports_tools(alias) else []
+    if not tools:
+        logger.info("%s cannot call tools; the agent runs on the pre-filled prompt alone", alias)
+
     agent = Agent( # It creates a constrained offline reporting agent backed by the local Foundry model
         client = OpenAIChatCompletionClient(
             model = model_id,
@@ -265,11 +333,20 @@ async def assess_with_agent_framework( # The alternative path that performs the 
         ),
         name = "WaggleWeeklyReportAgent",
         instructions = (
-            "You are Waggle's offline hive monitoring report agent"
-            "Use only the supplied events, rules and local knowledge"
-            "Return exactly one uppercase token: ROUTINE, WATCH or IMMEDIATE"
-            "Never present an acoustic alarm as proof of queen loss"
+            "You are Waggle's offline hive monitoring report agent. "
+            "Use only the supplied events, the rules, and what the tools return. "
+            + (
+                # Offered, not compelled. Forcing the first call was tried and made things
+                # worse: a small local model that is ordered to use a tool spends its
+                # budget on the call and loses the answer it was asked for.
+                "You may call period_overview, hive_history and look_up_guidance before "
+                "deciding; call them when the events alone do not settle the question. "
+                if tools else ""
+            ) +
+            "Never present an acoustic alarm as proof of queen loss. "
+            "Finish by returning exactly one uppercase token: ROUTINE, WATCH or IMMEDIATE."
         ),
+        tools = tools,
     )
 
     prompt = {
@@ -286,10 +363,15 @@ async def assess_with_agent_framework( # The alternative path that performs the 
     }
 
     response = await agent.run(json.dumps(prompt))
+    if tool_calls:
+        logger.info("Agent Framework used its tools: %s", ", ".join(tool_calls))
 
     match = re.search(r"\b(ROUTINE|WATCH|IMMEDIATE)\b", response.text.upper())
 
     if not match:
+        # The text is the only evidence of why the run failed, and losing it turns every
+        # agent problem into the same unhelpful sentence.
+        logger.warning("Agent Framework returned no allowed priority; response was: %s", response.text[:400])
         raise ValueError("Agent Framework response did not contain an allowed priority")
     
     priority = match.group(1).lower()
@@ -629,7 +711,7 @@ def _with_model_narrative( # It swaps the template prose for validated model pro
     )
 
 def generate_report(events: list[dict], language: Language, alias: str = "phi-3.5-mini") -> ReportDraft:
-    knowledge = retrieve_guidance(events, language)
+    knowledge = retrieve_guidance(events, language, limit=4)
 
     try: # Asks the local model for the constrained operational assessment
         assessment = assess_with_foundry(events, alias, knowledge)
@@ -652,6 +734,62 @@ def generate_report(events: list[dict], language: Language, alias: str = "phi-3.
 
     return _with_model_narrative(draft, events, assessment, knowledge, language, alias)
 
+# Two local models, each strong where the other is weak: the small tool-capable one
+# settles the priority in a couple of seconds, the larger one writes reliable JSON and
+# readable Turkish. Asking both and keeping the more cautious answer means a single
+# model's slip cannot quietly set the priority on its own.
+PRIORITY_ORDER = {"routine": 0, "watch": 1, "immediate": 2}
+
+
+def _cross_check_model() -> str:
+    """Read the setting when it is needed, not when this module happens to be imported.
+
+    Reading it at import time made the behaviour depend on import order: whichever module
+    loaded the .env file first decided whether a second model would be called, and a test
+    run that touched the panel first started reaching for a real model.
+    """
+    return os.getenv("WAGGLE_CROSS_CHECK_MODEL", "")
+
+
+def _cross_check(events: list[dict], knowledge: list[dict], primary: dict, alias: str) -> dict:
+    """Ask a second local model and keep the more cautious of the two priorities.
+
+    A cross-check that could fail the report would be worse than none, so every problem
+    here leaves the primary assessment exactly as it was.
+    """
+    second = _cross_check_model()
+    if not second or second == alias:
+        return primary
+    try:
+        try:
+            other = asyncio.run(assess_with_agent_framework(events, second, knowledge))
+        except Exception:  # noqa: BLE001 - the framework may be absent or the model weak
+            other = assess_with_foundry(events, second, knowledge)
+    except Exception as error:  # noqa: BLE001 - a second opinion is a bonus, never a gate
+        logger.warning("Cross-check with %s failed (%s); keeping the single assessment", second, type(error).__name__)
+        return primary
+
+    agreed = other["priority"] == primary["priority"]
+    if agreed:
+        logger.info("Cross-check: %s agrees (%s)", second, primary["priority"])
+        primary["cross_check"] = {"model": second, "agreed": True, "priority": other["priority"]}
+        return primary
+
+    # They disagree, so the safer reading wins. Under-calling an alarm is the failure that
+    # costs a colony; over-calling one costs an inspection.
+    logger.warning("Cross-check: %s says %s, %s says %s — taking the more cautious",
+                   alias, primary["priority"], second, other["priority"])
+    chosen = primary if PRIORITY_ORDER[primary["priority"]] >= PRIORITY_ORDER[other["priority"]] else other
+    chosen = _validate_assessment(dict(chosen), events)
+    chosen["cross_check"] = {
+        "model": second,
+        "agreed": False,
+        "priority": other["priority"],
+        "resolved_to": chosen["priority"],
+    }
+    return chosen
+
+
 def generate_agent_report(events: list[dict], language: Language, alias: str = "phi-3.5-mini") -> ReportDraft: # The agent Framework variant of the weekly report pipeline
     """
     
@@ -659,26 +797,35 @@ def generate_agent_report(events: list[dict], language: Language, alias: str = "
 
     """
 
-    knowledge = retrieve_guidance(events, language)
+    knowledge = retrieve_guidance(events, language, limit=4)
 
     try:
         assessment = asyncio.run(assess_with_agent_framework(events, alias, knowledge))
         generator = f"agent-framework:foundry-local:{alias}"
-    except ImportError:
-        # Agent Framework is an optional dependency and is absent on Python 3.9.
-        logger.warning("Agent Framework is not installed; using the deterministic fallback")
+    except Exception as error:  # noqa: BLE001 - ImportError on 3.9, SDK errors elsewhere
+        # Losing the framework should not cost the model's judgement as well. The same
+        # local model is reachable over plain HTTP, so try that before giving up on the
+        # model layer entirely — the deterministic fallback is the last resort, not the
+        # second one.
+        if isinstance(error, ImportError):
+            logger.warning("Agent Framework is not installed; falling back to the direct Foundry Local call")
+        else:
+            logger.warning("Agent Framework assessment failed (%s: %s); falling back to the direct Foundry Local call", type(error).__name__, error)
+        try:
+            assessment = assess_with_foundry(events, alias, knowledge)
+            generator = f"foundry-local:{alias}"
+        except Exception as direct_error:  # noqa: BLE001 - the model itself may be down
+            logger.warning("Foundry Local assessment also failed (%s: %s); using the deterministic fallback", type(direct_error).__name__, direct_error)
+            assessment = _fallback_assessment(events)
+            generator = "safe-fallback"
 
-        assessment = _fallback_assessment(events)
-
-        generator = "safe-fallback"
-    except Exception as error:  # noqa: BLE001 - the SDK raises a wide range of types
-        # Reporting must remain available if the optional framework or local model fails,
-        # but the reason must never be silent.
-        logger.warning("Agent Framework assessment failed (%s: %s); using the deterministic fallback", type(error).__name__, error)
-
-        assessment = _fallback_assessment(events)
-
-        generator = "safe-fallback"
+    if generator != "safe-fallback":
+        assessment = _cross_check(events, knowledge, assessment, alias)
+        # The generator string is the report's provenance record, and "two models looked
+        # at this" belongs in it as much as which one wrote the text.
+        cross = assessment.get("cross_check")
+        if cross:
+            generator += f"+{cross['model']}" + ("" if cross["agreed"] else "(disagreed)")
 
     assessment["knowledge_ids"] = [item["id"] for item in knowledge]
 

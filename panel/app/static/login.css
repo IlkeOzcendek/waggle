@@ -42,11 +42,6 @@
 .login-error strong { font-size: .86rem; font-weight: 850; }
 .login-error p { margin-top: 3px; color: #963a33; font-size: .8rem; font-weight: 720; line-height: 1.4; }
 .input-shell.input-error { border-color: #d85a50; background: #fffafa; box-shadow: 0 0 0 4px rgba(200,59,50,.09); }
-.demo-account-hint { margin-top: 26px; padding: 16px 18px; border: 1px solid #e6cfa4; border-radius: 14px; background: #fff8ea; }
-.demo-account-hint strong { display: block; margin-bottom: 9px; color: #8f3d0c; font-size: .74rem; font-weight: 850; letter-spacing: .9px; text-transform: uppercase; }
-.demo-account-hint p { display: flex; gap: 8px; margin: 0 0 9px; }
-.demo-account-hint code { padding: 6px 11px; border: 1px solid #ecdcbd; border-radius: 8px; background: #fff; color: #7a4310; font-size: .84rem; font-weight: 800; }
-.demo-account-hint small { display: block; color: var(--auth-muted); font-size: .78rem; line-height: 1.55; }
 .setup-invitation { margin-top: 30px; padding-top: 24px; border-top: 1px solid #e7e3da; text-align: center; }.setup-invitation p { margin: 0 0 10px; color: var(--auth-muted); font-size: .88rem; }.setup-invitation a { color: var(--auth-orange); font-weight: 750; text-underline-offset: 5px; }
 .setup-card .auth-heading { margin-bottom: 22px; }.setup-card .input-shell { min-height: 56px; }.setup-note { margin: 16px 0 0; color: var(--auth-muted); font-size: .8rem; line-height: 1.5; }.back-to-login { display: inline-block; margin-top: 20px; color: var(--auth-muted); font-size: .85rem; }
 @keyframes listen { from { transform: scaleY(.55); opacity: .6; } to { transform: scaleY(1); opacity: 1; } }

@@ -103,6 +103,15 @@ async def lifespan(_: FastAPI):
     if DEMO_MODE:
         salt, digest = hash_password(DEMO_PASSWORD)
         store.ensure_demo_owner(ADMIN_USERNAME, ADMIN_USERNAME, salt, digest)
+    # The demo account signs in whether or not demo mode is on, so the well-known password
+    # it was seeded with is the panel's weakest point until someone changes it. Saying so
+    # at every start is the price of keeping that account always reachable.
+    elif any(user["demo_account"] for user in store.users()):
+        logger.warning(
+            "Güvenlik uyarısı: %s hesabı demo parolasıyla oluşturuldu ve hâlâ giriş "
+            "yapabiliyor. Ayarlar → Hesap güvenliği bölümünden parolasını değiştirin.",
+            ADMIN_USERNAME,
+        )
     yield
 
 
@@ -193,10 +202,7 @@ def worker_may_write(path: str) -> bool:
 
 def effective_account(username: str) -> dict | None:
     """The account behind a session, or None when the username has no row of its own."""
-    account = store.user_account(username)
-    if account is not None and account["demo_account"] and not DEMO_MODE:
-        return None
-    return account
+    return store.user_account(username)
 
 
 def is_cross_site_request(origin: str | None, fetch_site: str | None, expected: str) -> bool:
@@ -222,7 +228,10 @@ def security_headers(path: str) -> dict[str, str]:
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         )
-    if path.startswith("/api/") or path in {"/login", "/setup"}:
+    # The panel shell carries the ?v= markers that invalidate the stylesheet and script,
+    # so caching it defeats the whole scheme: a cached shell keeps asking for the previous
+    # version of every asset and the interface silently stays one release behind.
+    if path.startswith("/api/") or path in {"/", "/login", "/setup"}:
         headers["Cache-Control"] = "no-store"
     return headers
 
@@ -327,11 +336,6 @@ def setup_status() -> dict[str, object]:
 def credentials_are_valid(username: str, password: str) -> bool:
     stored = store.user_credentials(username)
     if stored is not None:
-        account = store.user_account(username)
-        # The demo owner is seeded with a well-known password. Leaving it usable after
-        # demo mode is switched off would be a permanent way into a real panel.
-        if account and account["demo_account"] and not DEMO_MODE:
-            return False
         _, password_salt, password_hash = stored
         return verify_password(password, password_salt, password_hash)
     return DEMO_MODE and verify_credentials(username, password)
@@ -598,6 +602,27 @@ def panel() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/guidance")
+def guidance_notes(
+    language: Literal["tr", "en"] = "tr",
+    ids: str | None = Query(default=None, max_length=500),
+) -> list[dict]:
+    """The reviewed local notes a report was grounded in.
+
+    A report stores only the ids of the passages it used. The panel needs their text to
+    show what the assessment actually rested on — an assessment you cannot trace back to
+    its sources is just an opinion with a logo on it.
+    """
+    from brain.local_rag import load_knowledge
+
+    wanted = {item.strip() for item in ids.split(",") if item.strip()} if ids else None
+    return [
+        {"id": entry["id"], "text": entry[language], "tags": entry["tags"]}
+        for entry in load_knowledge()
+        if wanted is None or entry["id"] in wanted
+    ]
 
 
 @app.get("/api/system-status", response_model=SystemStatus)
