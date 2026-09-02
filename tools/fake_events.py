@@ -13,13 +13,15 @@ def event() -> dict[str, object]:
     roll = random.random()
     status = "ALARM" if roll < 0.23 else "WATCH" if roll < 0.33 else "NORMAL"
     anomaly_fraction = random.uniform(.85, 1.0) if status == "ALARM" else random.uniform(.35, .8) if status == "WATCH" else random.uniform(0, .2)
+    hive_id = random.choice(["H1", "H2", "H3"])
+    moment = datetime.now(timezone.utc).replace(microsecond=0)
     return {
-        "hive_id": random.choice(["H1", "H2", "H3"]),
-        "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "hive_id": hive_id,
+        "timestamp": moment.isoformat(),
         "status": status,
         "anomaly_fraction": round(anomaly_fraction, 2),
         "consecutive_anomalies": 30 if status == "ALARM" else 5 if status == "WATCH" else 0,
-        "source_file": "demo.wav",
+        "source_file": f"phone:{hive_id.lower()}-{moment:%Y%m%d-%H%M}.wav",
     }
 
 

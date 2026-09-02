@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -40,8 +41,10 @@ class FoundryReportTest(unittest.TestCase):
             any("fiziksel olarak kontrol" in item for item in report.recommendations)
         )
 
+    # Without this the narrative step would reach the real Foundry CLI and network.
+    @patch("brain.foundry_report._with_model_narrative", side_effect=lambda draft, *args, **kwargs: draft)
     @patch("brain.foundry_report.assess_with_agent_framework", new_callable=AsyncMock)
-    def test_weekly_report_records_agent_framework_provenance(self, assess):
+    def test_weekly_report_records_agent_framework_provenance(self, assess, _narrative):
         assess.return_value = {
             "priority": "immediate",
             "pattern": "persistent_acoustic_change",
@@ -64,6 +67,8 @@ class FoundryReportTest(unittest.TestCase):
         self.assertEqual(report.generator, "safe-fallback")
         self.assertTrue(report.assessment["inspection_required"])
 
+    # An exported endpoint override would short-circuit CLI discovery and fail this test.
+    @patch.dict(os.environ, {"WAGGLE_FOUNDRY_BASE_URL": ""}, clear=False)
     @patch("brain.foundry_report.subprocess.run")
     @patch("brain.foundry_report._run_foundry")
     @patch("brain.foundry_report.requests.get")

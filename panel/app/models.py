@@ -10,6 +10,7 @@ EventStatus = Literal["NORMAL", "WATCH", "ALARM"]
 EnrollmentState = Literal["device_required", "enrolling", "ready", "monitoring"]
 DeviceKind = Literal["phone", "sensor", "folder", "demo"]
 HealthEvidence = Literal["queen_seen", "brood_healthy", "hive_healthy", "uncertain"]
+InspectionResult = Literal["issue_confirmed", "no_issue_found", "uncertain"]
 GroundingSource = Annotated[str, Field(min_length=2, max_length=80, pattern=r"^[a-z0-9][a-z0-9._-]*$")]
 
 
@@ -26,6 +27,16 @@ class HiveEvent(HiveEventIn):
     id: int
     alindi: datetime
     acknowledged_at: datetime | None = None
+    inspection_result: InspectionResult | None = None
+    inspection_note: str | None = None
+    # Which account recorded the physical inspection. Null on events acknowledged before
+    # the panel tracked it, and on anything an unauthenticated edge service wrote.
+    acknowledged_by: str | None = None
+
+
+class AlarmInspectionIn(BaseModel):
+    result: InspectionResult
+    note: str | None = Field(default=None, max_length=500)
 
 
 class SensorAnalysis(BaseModel):
@@ -76,6 +87,7 @@ class HealthConfirmation(HealthConfirmationIn):
     hive_id: str
     confirmed_at: datetime
     accepted_for_enrollment: bool
+    confirmed_by: str | None = None
 
 
 class HiveSummary(BaseModel):
@@ -119,6 +131,8 @@ class ReportIn(BaseModel):
     language: Literal["tr", "en"] = "tr"
     generator: str = Field(default="manual", min_length=2, max_length=80)
     grounding_sources: list[GroundingSource] = Field(default_factory=list, max_length=10)
+    report_type: Literal["event", "daily", "weekly"] = "weekly"
+    event_id: int | None = Field(default=None, ge=1)
 
     @field_validator("hive_ids")
     @classmethod

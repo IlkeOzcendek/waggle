@@ -38,3 +38,4 @@ jobs:
       - run: python -m compileall -q brain ear panel tools
       - run: node --check panel/app/static/panel.js
       - run: node --check panel/app/static/login.js
+      - run: node --check panel/app/static/setup.js

@@ -24,7 +24,10 @@ def main() -> None:
         ],
         "hive_ids": ["H1", "H2", "H3"],
         "language": "tr",
-        "generator": "fake-demo",
+        # Must stay a generator the panel knows how to label; a raw string would be
+        # printed verbatim as the report's "Hazırlayan" field.
+        "generator": "deterministic-demo",
+        "report_type": "weekly",
     }
     response = requests.post(
         args.url,

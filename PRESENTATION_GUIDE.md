@@ -14,14 +14,14 @@ sonra canlı ürünü, en son teknik mimariyi anlatın. Modeli “tanı koyan si
 ## 2. Genel bakış — 30 saniye
 
 - Ana ekrandaki `NORMAL`, `WATCH` ve `ALARM` sayılarını gösterin.
-- **Bahçe Kovanı**, **Orman Kovanı** ve **Deneme Kovanı** kartlarını gösterin.
+- **Bahçe Kovanı**, **Orman Kovanı** ve **Çayır Kovanı** kartlarını gösterin.
 - `H1`, `H2`, `H3` değerlerinin değişmeyen teknik kimlikler; görünen adların ise
   kullanıcı tarafından yönetilebildiğini söyleyin.
 - Temel analiz, panel, alarm ve kayıt sisteminin internet olmadan çalıştığını belirtin.
 
 ## 3. Model ve alarm — 55 saniye
 
-- **Deneme Kovanı (H3)** ayrıntısını açın.
+- **Çayır Kovanı (H3)** ayrıntısını açın.
 - Kalıcı akustik değişimin önce `WATCH`, sonra `ALARM` oluşturduğunu gösterin.
 - Anomali oranının kraliçe kaybı olasılığı olmadığını açıklayın: model, sesin
   kovanın öğrendiği sağlıklı profilden ne ölçüde uzaklaştığını izler.
@@ -37,6 +37,10 @@ sonra canlı ürünü, en son teknik mimariyi anlatın. Modeli “tanı koyan si
 
 - **Kovanlarım → Yeni kovan ekle** yolunu gösterin.
 - **Cihazlar ve model** bölümünden telefonu yeni kovana bağlayın.
+- Üç şartın ekranda kontrol listesi olarak durduğunu gösterin. Özellikle gün şartını
+  okuyun: takvim günü sayılır, aynı gün kırk dosya göndermek tek gün ekler.
+- Kayıt göndermenin iki yolu olduğunu gösterin: birden fazla dosya seçmek ya da
+  **Cihazdan canlı dinle** ile mikrofondan kaydetmek. Kayıtlar sırayla gönderilir.
 - Durum geçişini açıklayın: `Cihaz bekleniyor → Öğrenme devam ediyor → İzleme etkin`.
 - Profilin aynı kovan ve mikrofonla alınan **42 sağlıklı kayıt**, **14 farklı gün** ve
   **4 güvenilir saha doğrulaması** istediğini belirtin.
@@ -46,6 +50,20 @@ sonra canlı ürünü, en son teknik mimariyi anlatın. Modeli “tanı koyan si
   özelliklerinin SQLite'ta tutulduğunu belirtin.
 - Eşik tamamlandığında kişisel profilin otomatik oluşturulduğunu, ONNX karar
   eşitliği doğrulanmadan alarm üretiminin açılmadığını vurgulayın.
+
+## 4b. Ekip ve hesaplar — 35 saniye
+
+- **Ayarlar → Ekip** bölümünde bir çalışan hesabı açın; geçici parolayı sizin
+  ilettiğinizi, çalışanın ilk girişte kendi parolasını belirlemeden hiçbir işlem
+  yapamadığını söyleyin. Bu olmadan “bu kontrolü kim yaptı” kaydı kimseyi göstermez.
+- **Çalışan gözüyle bak** ile kısıtlı paneli gösterin: çalışan kayıt gönderir, saha
+  kontrolü girer, alarmın fiziksel kontrolünü tamamlar; kovan silemez, cihaz bağlayamaz,
+  ayarlara ve yedeğe dokunamaz. Bu kısıt sunucuda zorlanır, sadece ekranda gizlenmez.
+- Bir alarmı kapatıp kaydın **kimin kontrol ettiğini** yazdığını gösterin.
+- Çalışanı devre dışı bıraktığınızda açık oturumunun anında kapandığını söyleyin.
+- Parola kurtarmanın üç yolu olduğunu belirtin: kurtarma kodu, sahibin çalışana yeni
+  parola vermesi, ya da panelin çalıştığı bilgisayarda `tools.reset_password`. Yerel ve
+  çevrimdışı bir panelde e-postayla sıfırlama yoktur.
 
 ## 5. Yerel yapay zekâ raporu — 35 saniye
 
@@ -104,6 +122,17 @@ rapor devreye girer ve kullanılan üretici bilgisi SQLite'ta saklanır.
 kullanır. Mevcut en güçlü kişisel-kovan testi %94,17 doğruluk ve %100 bozulma yakalama
 vermiştir. Bu sonuç kontrollü veri tekrarına aittir; saha başarısı olarak sunulmamalıdır.
 
+**Birden fazla kişi kullanabilir mi?** Evet. Arıcı, ekibine çalışan hesabı açar.
+Çalışan saha işini yapar — kayıt gönderir, saha kontrolü girer, alarmı kapatır — ama
+kovan, cihaz, ayar ve yedeğe dokunamaz. Her işlem hesabın adıyla kaydedilir, böylece
+hangi kontrolü kimin yaptığı belli olur.
+
+**Parolamı unutursam?** Ayarlardan tek kullanımlık bir kurtarma kodu üretirsiniz ve
+giriş ekranındaki **Parolamı unuttum** ile yeni parola belirlersiniz. Kod bir kez
+gösterilir, bir kez çalışır ve veritabanında yalnızca özeti tutulur. Kod da yoksa,
+panelin çalıştığı bilgisayarda `python -m tools.reset_password` komutu vardır —
+o makineye erişebilen kişi zaten veritabanına erişebiliyor.
+
 **Panel ile model birbirine bağımlı mı?** Hayır. Model ve panel `CONTRACT.md` içindeki
 aynı olay JSON'u üzerinden haberleşir; bileşenler ayrı ayrı geliştirilebilir.
 
@@ -112,5 +141,10 @@ aynı olay JSON'u üzerinden haberleşir; bileşenler ayrı ayrı geliştirilebi
 - `python tools/run_demo.py --foundry` komutunu internet kapalıyken bir kez çalıştırın.
 - H1/H2/H3 sayılarının sırasıyla `NORMAL/WATCH/ALARM` olduğunu doğrulayın.
 - Türkçe ve İngilizce raporların açıldığını kontrol edin.
-- Yeni kovan ve cihaz ekranının öğrenme ilerlemesini gösterdiğini doğrulayın.
+- Yeni kovan ve cihaz ekranının öğrenme ilerlemesini ve üç şartın kontrol listesini
+  gösterdiğini doğrulayın.
+- Çoklu dosya göndermeyi bir kez deneyin; canlı mikrofon kaydını **sunum yapacağınız
+  bilgisayarda** deneyin (telefonda `--lan` üzerinden mikrofon açılmaz).
+- Rapor PDF indirmeyi bir kez deneyin; `reportlab` kurulu değilse burada patlar.
+- Sunucuyu kod değişikliğinden sonra yeniden başlattığınızdan emin olun.
 - Ekran kaydı için bildirimleri kapatın ve tarayıcı yakınlaştırmasını `%100` yapın.

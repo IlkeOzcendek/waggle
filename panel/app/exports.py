@@ -34,6 +34,8 @@ def export_rows(store: EventStore, dataset: Dataset) -> list[dict]:
                 "source_file": event.source_file,
                 "received_at": event.alindi.isoformat(),
                 "acknowledged_at": event.acknowledged_at.isoformat() if event.acknowledged_at else None,
+                "inspection_result": event.inspection_result,
+                "inspection_note": event.inspection_note,
             }
             for event in events
         ]
@@ -49,6 +51,8 @@ def export_rows(store: EventStore, dataset: Dataset) -> list[dict]:
             "language": report.language,
             "generator": report.generator,
             "grounding_sources": report.grounding_sources,
+            "report_type": report.report_type,
+            "event_id": report.event_id,
             "created_at": report.created_at.isoformat(),
         }
         for report in reports
@@ -80,7 +84,7 @@ def build_export(store: EventStore, dataset: Dataset, file_format: FileFormat) -
 def _empty_fieldnames(dataset: Dataset) -> list[str]:
     return {
         "hives": ["hive_id", "name", "location", "active", "created_at"],
-        "events": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at"],
-        "alarms": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at"],
-        "reports": ["id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "language", "generator", "grounding_sources", "created_at"],
+        "events": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at", "inspection_result", "inspection_note"],
+        "alarms": ["id", "hive_id", "hive_name", "timestamp", "status", "anomaly_fraction", "consecutive_anomalies", "source_file", "received_at", "acknowledged_at", "inspection_result", "inspection_note"],
+        "reports": ["id", "period_start", "period_end", "summary", "recommendations", "hive_ids", "language", "generator", "grounding_sources", "report_type", "event_id", "created_at"],
     }[dataset]

@@ -4,17 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Waggle | Kovan İzleme</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=74">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Ana içeriğe geç</a>
   <header>
-    <div>
-      <p class="eyebrow">EDGE AI KOVAN İZLEME</p>
-      <h1 id="panel-name">Waggle</h1>
-      <p class="tagline">Kovanları dinleyen yapay zekâ</p>
-    </div>
-    <div class="header-actions"><div class="connection" role="status" aria-live="polite"><span aria-hidden="true"></span><span class="connection-label">Sistem bağlı</span></div><button id="language-toggle" type="button" aria-label="Dili değiştir">EN</button><span id="current-user">admin</span><button id="logout-button" type="button">Çıkış yap</button></div>
+    <div class="panel-brand"><img src="/static/favicon.svg?v=2" class="panel-logo" alt="" aria-hidden="true" width="44" height="44"><div><h1 id="panel-name">Waggle</h1><p class="tagline">Kovanları dinleyen yapay zekâ</p></div></div>
+    <div class="header-actions"><div class="connection" role="status" aria-live="polite"><span aria-hidden="true"></span><span class="connection-label">Sistem bağlı</span></div><button id="demo-view-switch" class="demo-view-switch" type="button" role="switch" aria-checked="true" hidden><span class="demo-view-track" aria-hidden="true"><span></span></span><span class="demo-view-label">Demo görünümü</span></button><button id="language-toggle" type="button" aria-label="Dili değiştir">EN</button><button id="profile-button" class="profile-button" type="button"><span class="profile-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"></circle><path d="M5.8 19c.7-4 2.9-5.8 6.2-5.8s5.5 1.8 6.2 5.8"></path></svg></span><span id="current-user">Kullanıcı</span><span aria-hidden="true">⌄</span></button><button id="logout-button" type="button">Çıkış yap</button></div>
   </header>
 
   <nav class="main-nav" aria-label="Ana menü">
@@ -27,34 +24,41 @@
     <button class="nav-button" data-view="settings" type="button" aria-current="false">Ayarlar</button>
   </nav>
 
+  <div id="worker-preview-banner" class="user-preview-banner" role="status" hidden>
+    <span class="user-preview-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-5 9.5-5 9.5 5 9.5 5-3.4 5-9.5 5-9.5-5-9.5-5Z"></path><circle cx="12" cy="12" r="2.25"></circle></svg></span>
+    <div><strong>Çalışan gözüyle bakıyorsunuz</strong><span>Çalışanlara kapalı bölümler gizli. Yetkiniz değişmedi; işlemler yine sizin hesabınızla yapılır.</span></div>
+    <button id="exit-worker-preview" type="button">Önizlemeyi kapat</button>
+  </div>
   <main id="main-content" tabindex="-1">
     <div id="overview-view" class="app-view">
       <section>
-        <div class="section-title">
-          <div><p class="eyebrow">GENEL BAKIŞ</p><h2>Kovanlarınızın durumu</h2></div>
-          <div class="live-actions"><p id="updated">Veri bekleniyor…</p><button id="demo-button" class="primary-button" type="button">Demo senaryosunu başlat</button></div>
+        <div class="overview-welcome">
+          <div><p class="eyebrow">GENEL BAKIŞ</p><h2><span id="greeting-text">Günaydın</span>, <span id="greeting-name">arıcı</span>.</h2><p><span id="summary-total">—</span> <span>kovan izleniyor</span> · <span id="updated">Veri bekleniyor…</span></p></div>
+          <div class="mini-bee" aria-hidden="true"><span class="mini-wing mini-wing-one"></span><span class="mini-wing mini-wing-two"></span><span class="mini-bee-body"><i class="mini-bee-face"></i></span><span class="mini-antenna"></span></div>
+          <button id="demo-button" class="primary-button" type="button" hidden>Demo senaryosunu başlat</button>
         </div>
-        <div class="summary-grid" aria-label="Kovan durum özeti">
-          <article><span>Toplam kovan</span><strong id="summary-total">—</strong></article>
-          <article class="summary-normal"><span>Normal</span><strong id="summary-normal">—</strong></article>
-          <article class="summary-warning"><span>Uyarı</span><strong id="summary-warning">—</strong></article>
-          <article class="summary-critical"><span>Kritik</span><strong id="summary-critical">—</strong></article>
+        <div class="status-ribbon" aria-label="Kovan durum özeti">
+          <div class="status-ribbon-intro"><strong>Bugün kovanlıkta</strong><span>Canlı akustik durum özeti</span></div>
+          <article class="ribbon-state ribbon-normal"><i></i><div><strong id="summary-normal">—</strong><span>Sağlıklı</span></div></article>
+          <article class="ribbon-state ribbon-watch"><i></i><div><strong id="summary-warning">—</strong><span>İzleniyor</span></div></article>
+          <article class="ribbon-state ribbon-alarm"><i></i><div><strong id="summary-critical">—</strong><span>Açık alarm</span></div></article>
         </div>
-        <div class="section-subtitle"><h2>Kovanlarım</h2><p>Detaylarını görmek istediğiniz kovanı seçin.</p></div>
-        <div id="hives" class="hive-grid"></div>
+        <article id="overview-alert" class="overview-alert" role="alert" hidden><span class="overview-alert-icon">!</span><div><strong id="overview-alert-title">Kovan dikkat istiyor</strong><p id="overview-alert-copy">Kalıcı akustik değişim algılandı. Fiziksel kontrol önerilir.</p></div><button id="overview-alert-button" type="button">Olayı incele</button></article>
+        <div class="section-subtitle"><h2>Kovanlarım</h2><button class="text-action" data-view-shortcut="hives" type="button">Tümünü görüntüle →</button></div>
+        <div id="hives" class="hive-list"></div>
       </section>
 
-      <section>
+      <section class="overview-weather-section">
         <article class="weather-card">
-          <p class="eyebrow">SAHA BAĞLAMI</p>
-          <div class="weather-main"><div><h2>Hava durumu</h2><p id="weather-location">Yükleniyor…</p></div><strong id="weather-temp">—</strong></div>
+          <div class="weather-heading"><div><p class="eyebrow">SAHA BAĞLAMI</p><h2>Hava durumu</h2></div><span class="weather-mark" aria-hidden="true">☼</span></div>
+          <div class="weather-main"><p id="weather-location">Yükleniyor…</p><strong id="weather-temp">—</strong></div>
           <div id="weather-details" class="weather-details"><span>Nem —</span><span>Rüzgâr —</span></div>
         </article>
       </section>
     </div>
 
     <div id="detail-view" class="app-view" hidden>
-      <button id="back-overview" class="back-button" type="button">← Tüm kovanlara dön</button>
+      <button id="back-overview" class="back-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5.5 8.5 12 15 18.5"></path></svg>Tüm kovanlara dön</button>
       <section>
         <div class="section-title"><div><p class="eyebrow">KOVAN DETAYI</p><h2 id="detail-title">Kovan</h2></div><span id="detail-status" class="badge">Veri bekleniyor</span></div>
         <div id="detail-summary" class="detail-summary"></div>
@@ -83,25 +87,102 @@
 
     <div id="reports-view" class="app-view" hidden>
       <section>
-        <article class="report-card report-page-card">
-          <div class="section-title"><div><p class="eyebrow">YAPAY ZEKÂ RAPORU</p><h2>Haftalık değerlendirmeler</h2></div><select id="report-select" aria-label="Rapor geçmişi"><option value="">Rapor yok</option></select></div>
-          <span id="report-period" class="report-period"></span>
-          <span id="report-source" class="report-period"></span>
-          <p id="report-summary" class="report-summary">Henüz rapor üretilmedi. Foundry Local veya sahte rapor üreticisi bu alanı besleyecek.</p>
-          <ul id="report-actions" class="report-actions"></ul>
-        </article>
+        <div class="section-title reports-page-title">
+          <div class="report-title-copy">
+            <p class="eyebrow"><i aria-hidden="true"></i>KOVAN RAPORLARI</p>
+            <h2>Kovanlarda ne oldu?</h2>
+            <p class="reports-page-intro">Akustik olaylar, saha kontrolleri ve önerilen adımlar tek bir değerlendirmede.</p>
+            <span class="report-local-badge"><i aria-hidden="true"></i>Yerel yapay zekâ değerlendirmesi<em id="report-processing-note">Yerelde işlendi</em></span>
+          </div>
+          <div class="report-head-aside">
+            <p class="report-aside-label">GÜNCEL RAPOR</p>
+            <div class="report-picker">
+              <button id="report-picker-button" type="button" aria-expanded="false">
+                <svg class="report-picker-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"></path><circle cx="8.5" cy="13.5" r="1.1"></circle><circle cx="12" cy="13.5" r="1.1"></circle><circle cx="15.5" cy="13.5" r="1.1"></circle></svg>
+                <span class="report-picker-copy"><strong id="report-period">—</strong><small id="report-picker-kind">Rapor yok</small></span>
+                <i aria-hidden="true"></i>
+              </button>
+              <div id="report-picker-menu" class="report-picker-menu" hidden></div>
+              <select id="report-select" aria-label="Rapor geçmişi" hidden><option value="">Rapor yok</option></select>
+            </div>
+            <div class="report-aside-meta"><span>Hazırlayan</span><strong id="report-source">—</strong><small id="report-provenance"></small></div>
+            <div class="report-aside-actions">
+              <button id="report-history-open" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5v5l3 1.8"></path><path d="M20 12a8 8 0 1 1-2.6-5.9"></path><path d="M20.5 4v3.6h-3.6"></path></svg>Rapor geçmişi</button>
+              <button id="report-period-jump" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2.1"></circle><circle cx="10" cy="17" r="2.1"></circle></svg>Dönemi değiştir</button>
+              <button id="report-generate" class="report-generate-button" type="button" hidden>Yeni rapor üret</button>
+            </div>
+          </div>
+        </div>
+        <div class="report-controls" aria-label="Rapor filtreleri">
+          <div class="report-controls-intro"><strong>Rapor geçmişinde ara</strong><span>Filtreler hangi raporun açılacağını belirler.</span></div>
+          <div class="report-controls-row">
+            <div class="report-type-tabs" role="group" aria-label="Rapor türü"><button class="active" data-report-type="all" type="button">Tümü</button><button data-report-type="event" type="button">Olay</button><button data-report-type="daily" type="button">Günlük</button><button data-report-type="weekly" type="button">Haftalık</button></div>
+            <label>Kovan <select id="report-hive-filter"><option value="all">Tüm kovanlar</option></select></label>
+            <label>Başlangıç <input id="report-date-start" type="date"></label>
+            <label>Bitiş <input id="report-date-end" type="date"></label>
+            <div class="report-filter-actions"><span id="report-filter-count" class="report-filter-count"></span><button id="report-clear-filters" class="report-clear-button" type="button">Filtreleri temizle</button><button id="report-apply-filters" class="report-apply-button" type="button">Filtreleri uygula</button></div>
+          </div>
+        </div>
+        <div class="report-metric-strip" role="group" aria-labelledby="report-evidence-title">
+          <div class="report-metric-intro"><p class="report-section-label">ÖLÇÜM ÖZETİ</p><h3 id="report-evidence-title">Veriler ne söylüyor?</h3><span id="report-scope">Seçili rapor dönemi</span></div>
+          <article><span>Toplam kayıt</span><strong id="report-event-count">0</strong><small>akustik olay</small></article>
+          <article><span>Ortalama aykırılık</span><strong id="report-average-anomaly">%0</strong><small>dönem ortalaması</small></article>
+          <article><span>En yüksek değer</span><strong id="report-peak-anomaly">%0</strong><small>ölçülen tepe</small></article>
+          <article><span>Alarm oranı</span><strong id="report-alarm-rate">%0</strong><small>kritik kayıt payı</small></article>
+        </div>
+        <div class="report-page-layout">
+          <article class="report-card report-page-card">
+            <p class="report-section-label">GENEL DURUM</p>
+            <h3 id="report-summary-title">Haftanın özeti</h3>
+            <div id="report-hive-states" class="report-hive-states"></div>
+            <div id="report-verdict" class="report-verdict"><span class="report-verdict-mark" aria-hidden="true">!</span><div><strong id="report-verdict-title">—</strong><small id="report-verdict-note"></small></div></div>
+            <p id="report-summary" class="report-summary">Henüz haftalık değerlendirme bulunmuyor. İlk rapor oluşturulduğunda kovanların durumu ve önerilen adımlar burada görünecek.</p>
+            <div class="report-section-divider"></div>
+            <p class="report-section-label">SONRAKİ ADIMLAR</p>
+            <h3>Öncelikli öneriler</h3>
+            <ol id="report-actions" class="report-actions"></ol>
+          </article>
+          <aside class="report-side-column">
+            <article class="report-download-card"><p class="report-section-label">DIŞA AKTAR</p><h3>Raporu paylaşın</h3><p>Seçili değerlendirmeyi grafikleri ve kaynak bilgileriyle birlikte indirin.</p><div class="report-file-row"><span class="report-file-mark" aria-hidden="true">PDF</span><div><strong id="report-file-name">Haftalık rapor</strong><small id="report-file-meta">PDF</small></div></div><a id="report-pdf-download" href="#" target="_blank" rel="noopener">PDF indir</a><a id="report-pdf-other" class="report-pdf-other" href="#" target="_blank" rel="noopener" hidden></a></article>
+            <article class="report-inspection-card"><p class="report-section-label">SAHA GERİ BİLDİRİMİ</p><h3>Sahada doğrulananlar</h3><p>Seçili dönemde fiziksel olarak incelenen alarmların sonuçları.</p><div class="inspection-tiles"><span class="inspection-row confirmed"><strong id="report-confirmed-count">0</strong>Doğrulandı</span><span class="inspection-row cleared"><strong id="report-cleared-count">0</strong>Sorun yok</span><span class="inspection-row uncertain"><strong id="report-uncertain-count">0</strong>Tekrar kontrol</span></div></article>
+            <div id="report-grounding-note" class="report-grounding-note" hidden><span class="report-ai-mark">AI</span><div><strong id="report-grounding-title">Yerelde işlendi, kaynaklarla desteklendi</strong><small id="report-grounding-detail">SQLite olay geçmişi</small></div></div>
+          </aside>
+        </div>
+        <div class="report-visuals">
+          <article class="report-chart-card report-trend-card">
+            <div class="report-chart-heading">
+              <div><p class="report-section-label">AKUSTİK EĞİLİM</p><h3>Aykırı ses oranının zaman içindeki değişimi</h3><p class="report-chart-description">Her nokta bir analiz penceresini, her renk ise ayrı bir kovanın dönem içindeki değişimini gösterir.</p></div>
+              <div id="report-trend-legend" class="chart-legends"></div>
+            </div>
+            <svg id="report-trend-chart" viewBox="0 0 720 235" role="img" aria-label="Aykırı ses oranının zaman içindeki değişimi"></svg>
+            <div class="report-finding"><span class="report-finding-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4.5 13.6 9l4.4 1.6-4.4 1.6L12 16.7l-1.6-4.5L6 10.6 10.4 9Z"></path><path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7Z"></path></svg></span><div><strong>Öne çıkan bulgu</strong><p id="report-trend-interpretation"></p></div></div>
+          </article>
+          <article class="report-chart-card report-status-card">
+            <div class="report-chart-heading">
+              <div><p class="report-section-label">OLAY DAĞILIMI</p><h3>Kayıtların durumlara göre dağılımı</h3><p class="report-chart-description">NORMAL, WATCH ve ALARM kararlarının seçili dönem içindeki payını karşılaştırır.</p></div>
+            </div>
+            <div class="report-status-total"><strong id="report-status-total">0</strong><span>Seçili dönem</span></div>
+            <div id="report-status-bar" class="report-status-bar" role="img" aria-labelledby="report-status-total"></div>
+            <div id="report-status-chart" class="report-status-chart"></div>
+            <div class="report-finding"><span class="report-finding-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4.5v15M5 8.5h14M7.5 8.5 5 14h5ZM16.5 8.5 14 14h5Z"></path><path d="M8.5 19.5h7"></path></svg></span><div><strong>Dağılım</strong><p id="report-status-interpretation"></p></div></div>
+          </article>
+        </div>
+        <p class="report-disclaimer">Waggle, akustik değişimleri erken uyarı olarak yorumlar; saha incelemesinin yerini almaz.</p>
       </section>
     </div>
 
     <div id="hives-view" class="app-view" hidden>
       <section>
-        <div class="section-title"><div><p class="eyebrow">KOVAN YÖNETİMİ</p><h2>Kovanlarım</h2></div><button id="show-hive-form" class="primary-button" type="button">+ Yeni kovan ekle</button></div>
-        <p class="management-intro">Kovan adlarını ve konumlarını buradan yönetin. Sensör kimliği sistem tarafından otomatik oluşturulur.</p>
+        <div class="hives-page-head">
+          <div class="section-title"><div><p class="eyebrow">KOVAN YÖNETİMİ</p><h2>Kovanlarım</h2></div><button id="show-hive-form" class="primary-button" type="button">+ Yeni kovan ekle</button></div>
+          <p class="management-intro">Kovan adlarını ve konumlarını buradan yönetin. Sensör kimliği sistem tarafından otomatik oluşturulur.</p>
+        </div>
         <form id="hive-form" class="hive-form" hidden>
           <h3 id="hive-form-title">Yeni kovan ekle</h3>
           <div><label for="hive-name">Kovan adı</label><input id="hive-name" name="name" placeholder="Örn. Arka Bahçe Kovanı" required minlength="2" maxlength="80"></div>
           <div><label for="hive-location">Konum</label><input id="hive-location" name="location" placeholder="Örn. Ankara / Gölbaşı" maxlength="160"></div>
-          <div class="form-actions"><button id="cancel-hive-form" type="button">Vazgeç</button><button id="save-hive-button" class="primary-button" type="submit">Kovanı kaydet</button></div>
+          <div class="hive-form-hint"><span class="hive-form-hint-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5a6 6 0 0 1 3.5 10.9V17h-7v-2.6A6 6 0 0 1 12 3.5Z"></path><path d="M9.5 20h5"></path></svg></span><div><strong>Sıradaki adım: cihaz eşleştirme</strong><p>Kaydettikten sonra kovana bir dinleme cihazı bağlayacaksınız. Öğrenme o adımda başlar ve <b>profil hazır olana kadar hiç alarm üretilmez</b>.</p></div></div>
+          <div class="form-actions"><button id="cancel-hive-form" type="button">Vazgeç</button><button id="save-hive-button" class="primary-button" type="submit">Kovanı kaydet ve cihaz ekle</button></div>
           <p id="hive-form-message" class="form-message" role="status"></p>
         </form>
         <div id="managed-hives" class="managed-hive-list"></div>
@@ -109,13 +190,35 @@
           <div class="section-subtitle"><div><p class="eyebrow">CİHAZ VE MODEL</p><h3 id="device-panel-title">Kovan kurulumu</h3></div><button id="close-device-panel" type="button">Kapat</button></div>
           <div id="enrollment-status" class="enrollment-status"></div>
           <form id="device-form" class="device-form">
-            <div><label for="device-name">Cihaz adı</label><input id="device-name" value="Kovan telefonu" required minlength="2" maxlength="80"></div>
-            <div><label for="device-kind">Cihaz türü</label><select id="device-kind"><option value="phone">Telefon mikrofonu</option><option value="sensor">Akustik sensör</option><option value="folder">WAV klasörü</option><option value="demo">Demo cihazı</option></select></div>
-            <button class="primary-button" type="submit">+ Cihaz ekle</button><p id="device-message" class="form-message" role="status"></p>
+            <div><label for="device-name">Cihaz adı</label><input id="device-name" value="Saha telefonu" required minlength="2" maxlength="80"></div>
+            <div><label for="device-kind">Cihaz türü</label><select id="device-kind"><option value="phone">Telefon mikrofonu</option><option value="sensor">Akustik sensör</option><option value="folder">WAV klasörü</option></select></div>
+            <button class="primary-button" type="submit">+ Cihaz ekle</button>
+            <p class="device-form-hint">Elinizde donanım yoksa “WAV klasörü” seçin: önceden alınmış ses kayıtlarını yükleyerek aynı akışı çalıştırabilirsiniz.</p>
+            <p id="device-message" class="form-message" role="status"></p>
           </form>
           <article id="sensor-card" class="sensor-card" hidden>
             <div class="sensor-step"><span>1</span><div><label for="sensor-device">Bağlı cihaz</label><select id="sensor-device"></select></div></div>
-            <div class="sensor-step"><span>2</span><div><label for="sensor-audio">Ses kaydı seçin</label><input id="sensor-audio" type="file" accept="audio/*"><small>iPhone’da Sesli Notlar ile kaydedip dosyayı seçin. Kayıt yalnızca yerel Waggle sunucusuna gönderilir.</small></div></div>
+            <div class="sensor-step"><span>2</span><div>
+              <label id="sensor-source-label">Kayıt kaynağı</label>
+              <div class="sensor-source-tabs" role="tablist" aria-labelledby="sensor-source-label">
+                <button class="active" data-sensor-source="file" type="button" role="tab" aria-selected="true">Dosya yükle</button>
+                <button data-sensor-source="live" type="button" role="tab" aria-selected="false">Cihazdan canlı dinle</button>
+              </div>
+              <div id="sensor-source-file" class="sensor-source">
+                <input id="sensor-audio" type="file" accept="audio/*" multiple>
+                <small>Birden fazla dosya seçebilirsiniz; hepsi sırayla gönderilir. iPhone’da Sesli Notlar ile kaydedip dosyaları seçin ya da bilgisayarınızdaki bir WAV klasöründen yükleyin. Kayıtlar yalnızca yerel Waggle sunucusuna gönderilir, internete çıkmaz.</small>
+              </div>
+              <div id="sensor-source-live" class="sensor-source" hidden>
+                <div class="live-recorder">
+                  <button id="live-record-toggle" class="live-record-button" type="button"><span class="live-record-dot" aria-hidden="true"></span><span id="live-record-label">Dinlemeyi başlat</span></button>
+                  <div class="live-meter" aria-hidden="true"><span id="live-meter-fill"></span></div>
+                  <strong id="live-record-timer">00:00</strong>
+                </div>
+                <small>Cihazın mikrofonu kovanı anlık dinler. Kaydı bitirdiğinizde kuyruğa eklenir; arka arkaya birkaç kayıt alabilirsiniz. Mikrofon yalnızca bu cihazda çalışır ve ses yerel sunucudan dışarı çıkmaz.</small>
+                <p id="live-record-message" class="form-message" role="status"></p>
+              </div>
+              <ul id="sensor-queue" class="sensor-queue" hidden></ul>
+            </div></div>
             <form id="health-confirmation-form" class="health-confirmation" hidden>
               <strong>Saha sağlık kontrolü zamanı</strong>
               <p>Bu kısa kontrol en fazla dört günde bir istenir. Emin değilseniz kayıt modele eklenmez.</p>
@@ -124,7 +227,7 @@
               <label for="health-note">Not (isteğe bağlı)</label><input id="health-note" maxlength="500">
               <button class="primary-button" type="submit">Kontrolü kaydet</button><span id="health-confirmation-message" class="form-message" role="status"></span>
             </form>
-            <div class="sensor-step"><span>3</span><div><button id="analyze-sensor-audio" class="primary-button" type="button">Kaydı gönder</button><p id="sensor-message" class="form-message" role="status"></p></div></div>
+            <div class="sensor-step"><span>3</span><div><label for="analyze-sensor-audio">Kayıtları gönderin</label><small>Kayıtlar sırayla yerel modelde çözümlenir; öğrenme sürüyorsa profile eklenir, profil hazırsa izleme akışında değerlendirilir.</small><button id="analyze-sensor-audio" class="primary-button" type="button">Kaydı gönder</button><div id="sensor-batch" class="sensor-batch" hidden><div class="sensor-batch-track"><span id="sensor-batch-fill"></span></div><span id="sensor-batch-label"></span></div><p id="sensor-message" class="form-message" role="status"></p></div></div>
             <div id="sensor-result" class="sensor-result" hidden></div>
           </article>
         </section>
@@ -133,12 +236,22 @@
 
     <div id="alarms-view" class="app-view" hidden>
       <section>
-        <div class="section-title">
-          <div><p class="eyebrow">ALARM MERKEZİ</p><h2>Kritik olaylar</h2></div>
-          <label>Göster <select id="alarm-filter"><option value="open">Açık alarmlar</option><option value="acknowledged">Kontrol edilenler</option><option value="all">Tümü</option></select></label>
+        <div class="section-title alarms-page-title">
+          <div><p class="eyebrow">ALARM MERKEZİ</p><h2>Dikkat isteyen olaylar</h2></div>
+          <div id="alarm-filter" class="alarm-filter-control" data-value="open" aria-label="Alarm görünümü">
+            <button class="active" data-alarm-filter="open" type="button">Açık</button>
+            <button data-alarm-filter="acknowledged" type="button">Kontrol edilen</button>
+            <button data-alarm-filter="all" type="button">Tümü</button>
+          </div>
         </div>
-        <div class="alarm-summary"><div><span>Açık alarm</span><strong id="open-alarm-count">0</strong></div><p>Açık alarmları fiziksel kovan kontrolünden sonra işaretleyin.</p></div>
+        <div class="alarm-summary">
+          <div class="alarm-summary-count"><i aria-hidden="true"></i><div><strong id="open-alarm-count">0</strong><span>Açık alarm</span></div></div>
+          <p><strong>Fiziksel kontrol bekleniyor.</strong><span>Alarmı yalnızca kovanı yerinde inceledikten sonra kapatın.</span></p>
+          <div id="alarm-sound-state" class="alarm-sound-state">Sesli uyarı açık</div>
+        </div>
+        <div class="alarm-list-tools"><div><p class="eyebrow">KOVANLAR</p><h3>Alarm kayıtları</h3></div><label for="alarm-hive-search"><span>Kovanlarda ara</span><input id="alarm-hive-search" type="search" placeholder="Kovan adı veya kimliği"></label></div>
         <div id="alarms-list" class="alarms-list"><p>Alarm verileri yükleniyor…</p></div>
+        <p class="alarm-disclaimer"><span aria-hidden="true">i</span>Waggle bir sağlık tanısı koymaz; kalıcı ses değişimini erken uyarı olarak bildirir.</p>
       </section>
     </div>
 
@@ -147,12 +260,12 @@
         <div class="section-title"><div><p class="eyebrow">VERİ YÖNETİMİ</p><h2>Dışa aktar</h2></div></div>
         <p class="management-intro">Kayıtları Excel için CSV veya sistem entegrasyonları için JSON biçiminde indirin.</p>
         <div class="export-grid">
-          <article><div><span class="export-icon">♜</span><h3>Kovanlar</h3><p>Aktif ve arşivlenmiş bütün kovanların adları, konumları ve teknik kimlikleri.</p></div><div><a href="/api/export/hives.csv" download>CSV indir</a><a href="/api/export/hives.json" download>JSON indir</a></div></article>
-          <article><div><span class="export-icon">↗</span><h3>Tüm olaylar</h3><p>Model durumları, akustik değişim oranları, zamanlar ve kovan bilgileri.</p></div><div><a href="/api/export/events.csv" download>CSV indir</a><a href="/api/export/events.json" download>JSON indir</a></div></article>
-          <article><div><span class="export-icon">!</span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
-          <article><div><span class="export-icon">≡</span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
-          <article class="backup-card"><div><span class="export-icon">↓</span><h3>Tam veritabanı yedeği</h3><p>Kovanlar, olaylar, alarm durumları ve raporları içeren tutarlı SQLite yedeğini indirin. Bu dosyayı güvenli bir yerde saklayın.</p></div><div><a href="/api/backup/database" download>SQLite yedeğini indir</a></div></article>
-          <article class="backup-card restore-card"><div><span class="export-icon">↑</span><h3>Yedekten geri yükle</h3><p>Geçerli bir Waggle SQLite yedeği seçin. Mevcut veriler değiştirilmeden hemen önce sunucuda otomatik bir kurtarma kopyası oluşturulur.</p></div><div class="restore-actions"><label for="restore-file">Yedek dosyası</label><input id="restore-file" type="file" accept=".db,application/vnd.sqlite3,application/octet-stream"><button id="restore-backup" type="button">Yedeği geri yükle</button></div><p id="restore-message" class="form-message" role="status"></p></article>
+          <article><div><span class="export-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 9.5 12 5l8 4.5v9L12 23l-8-4.5Z"></path><path d="M4 9.5 12 14l8-4.5M12 14v9"></path></svg></span><h3>Kovanlar</h3><p>Aktif ve arşivlenmiş bütün kovanların adları, konumları ve teknik kimlikleri.</p></div><div><a href="/api/export/hives.csv" download>CSV indir</a><a href="/api/export/hives.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 17.5 9 11l4 3.5 7.5-8"></path><path d="M15.5 6.5h5v5"></path></svg></span><h3>Tüm olaylar</h3><p>Model durumları, akustik değişim oranları, zamanlar ve kovan bilgileri.</p></div><div><a href="/api/export/events.csv" download>CSV indir</a><a href="/api/export/events.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon export-icon-alarm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 22 20H2Z"></path><path d="M12 10v4.5M12 17.2v.1"></path></svg></span><h3>Kritik alarmlar</h3><p>Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.</p></div><div><a href="/api/export/alarms.csv" download>CSV indir</a><a href="/api/export/alarms.json" download>JSON indir</a></div></article>
+          <article><div><span class="export-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6Z"></path><path d="M14 3.5v4h4M9 12h6M9 15.5h6M9 19h3"></path></svg></span><h3>Raporlar</h3><p>Haftalık değerlendirmeler, öneriler ve ilgili kovanlar.</p></div><div><a href="/api/export/reports.csv" download>CSV indir</a><a href="/api/export/reports.json" download>JSON indir</a></div></article>
+          <article class="backup-card"><div><span class="export-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"></path><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"></path></svg></span><h3>Tam veritabanı yedeği</h3><p>Kovanlar, olaylar, alarm durumları ve raporları içeren tutarlı SQLite yedeğini indirin. Bu dosyayı güvenli bir yerde saklayın.</p></div><div><a href="/api/backup/database" download>SQLite yedeğini indir</a></div></article>
+          <article class="backup-card restore-card"><div><span class="export-icon export-icon-restore" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v7.5M8.5 12 12 8.5 15.5 12"></path><path d="M4 16.5v2.5h16v-2.5"></path><path d="M20 9a8 8 0 1 0-1.6 4.8"></path></svg></span><h3>Yedekten geri yükle</h3><p>Geçerli bir Waggle SQLite yedeği seçin. Mevcut veriler değiştirilmeden hemen önce sunucuda otomatik bir kurtarma kopyası oluşturulur.</p></div><div class="restore-actions"><label for="restore-file">Yedek dosyası</label><input id="restore-file" type="file" accept=".db,application/vnd.sqlite3,application/octet-stream"><button id="restore-backup" type="button">Yedeği geri yükle</button></div><p id="restore-message" class="form-message" role="status"></p></article>
         </div>
       </section>
     </div>
@@ -202,9 +315,119 @@
           </article>
           <div class="settings-actions"><p id="settings-message" role="status"></p><button class="primary-button" type="submit">Ayarları kaydet</button></div>
         </form>
+
+        <section class="account-security">
+          <div class="section-subtitle"><div><p class="eyebrow">HESAP GÜVENLİĞİ</p><h3>Parola ve kurtarma</h3></div></div>
+          <div class="security-grid">
+            <form id="password-form" class="security-card">
+              <div class="security-card-head">
+                <span class="security-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"></rect><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"></path><circle cx="12" cy="15.5" r="1.4"></circle></svg></span>
+                <div><h4>Parolayı değiştir</h4><p>Güvenliğiniz için mevcut parolanız sorulur.</p></div>
+              </div>
+              <label for="current-password">Mevcut parola<input id="current-password" type="password" autocomplete="current-password" required></label>
+              <label for="new-password">Yeni parola<input id="new-password" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+              <ul id="password-rules" class="password-rules">
+                <li data-rule="length">En az 10 karakter</li>
+                <li data-rule="match">İki alan da aynı</li>
+                <li data-rule="different">Mevcut paroladan farklı</li>
+              </ul>
+              <label for="new-password-confirm">Yeni parolayı doğrulayın<input id="new-password-confirm" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+              <p id="password-message" class="form-message" role="status"></p>
+              <button class="primary-button" type="submit">Parolayı değiştir</button>
+            </form>
+
+            <article class="security-card">
+              <div class="security-card-head">
+                <span class="security-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.5c0 4-2.9 7.4-7 8.9-4.1-1.5-7-4.9-7-8.9V6l7-2.5Z"></path><path d="m9 12 2.2 2.2L15.5 10"></path></svg></span>
+                <div><h4>Kurtarma kodu</h4><p>Parolanızı unutursanız girişte bu kodla yeni parola belirlersiniz.</p></div>
+              </div>
+              <p id="recovery-state" class="recovery-state">Yükleniyor…</p>
+              <div id="recovery-code-box" class="recovery-code-box" hidden>
+                <p class="recovery-code-warning">Bu kod yalnızca bir kez gösterilir. Bir yere yazın veya yazdırın.</p>
+                <code id="recovery-code-value"></code>
+                <div class="recovery-code-actions">
+                  <button id="copy-recovery-code" type="button">Kopyala</button>
+                  <button id="print-recovery-code" type="button">Yazdır</button>
+                </div>
+              </div>
+              <p id="recovery-message" class="form-message" role="status"></p>
+              <button id="generate-recovery-code" class="primary-button" type="button">Kurtarma kodu üret</button>
+              <p class="recovery-note">Kodunuz da yoksa: panelin çalıştığı bilgisayarda <code>python -m tools.reset_password</code> komutunu çalıştırın.</p>
+            </article>
+          </div>
+
+          <section id="workers-section" class="workers-section" hidden>
+            <div class="section-subtitle"><div><p class="eyebrow">EKİP</p><h3>Çalışanlar</h3></div><div class="workers-head-actions"><button id="preview-as-worker" type="button">Çalışan gözüyle bak</button><button id="show-worker-form" class="primary-button" type="button">+ Çalışan ekle</button></div></div>
+            <p class="workers-intro">Çalışanlar kayıt gönderebilir, saha kontrolü girebilir ve alarmın fiziksel kontrolünü tamamlayabilir. Kovan ekleyip silemez, cihaz bağlayamaz, ayarları ve yedeği değiştiremez. Yaptıkları işlem kendi adlarıyla kaydedilir.</p>
+            <form id="worker-form" class="worker-form" hidden>
+              <div><label for="worker-display-name">Adı soyadı</label><input id="worker-display-name" required minlength="2" maxlength="80"></div>
+              <div><label for="worker-username">Kullanıcı adı</label><input id="worker-username" required minlength="3" maxlength="32" autocomplete="off"></div>
+              <div><label for="worker-password">Geçici parola</label><input id="worker-password" type="text" required minlength="10" maxlength="128" autocomplete="off"></div>
+              <p class="worker-form-hint">Bu parolayı çalışana kendiniz iletirsiniz. İlk girişinde kendi parolasını belirlemeden hiçbir işlem yapamaz.</p>
+              <div class="worker-form-actions"><button id="cancel-worker-form" type="button">Vazgeç</button><button class="primary-button" type="submit">Çalışanı ekle</button></div>
+              <p id="worker-message" class="form-message" role="status"></p>
+            </form>
+            <div id="worker-list" class="worker-list"></div>
+          </section>
+        </section>
       </section>
     </div>
   </main>
+
+  <dialog id="alarm-confirm-dialog" class="alarm-confirm-dialog" aria-labelledby="alarm-confirm-title">
+    <div class="alarm-confirm-mark" aria-hidden="true">!</div>
+    <div class="alarm-confirm-copy">
+      <p class="eyebrow">FİZİKSEL KONTROL</p>
+      <h2 id="alarm-confirm-title">Kontrol sonucunu kaydedin</h2>
+      <p>Fiziksel incelemede gördüğünüz durumu seçin. Bu bilgi alarm geçmişine, dışa aktarımlara ve yapay zekâ raporlarına eklenir.</p>
+      <fieldset class="alarm-inspection-options">
+        <legend>Kontrol sonucu</legend>
+        <label><input type="radio" name="alarm-inspection-result" value="issue_confirmed"><span><strong>Sorun doğrulandı</strong><small>Kovanda müdahale gerektiren bir durum görüldü.</small></span></label>
+        <label><input type="radio" name="alarm-inspection-result" value="no_issue_found"><span><strong>Sorun görülmedi</strong><small>Kovan kontrolünde belirgin bir sorun bulunmadı.</small></span></label>
+        <label><input type="radio" name="alarm-inspection-result" value="uncertain"><span><strong>Belirsiz</strong><small>Sonuç kesin değil; yeniden kontrol gerekiyor.</small></span></label>
+      </fieldset>
+      <label class="alarm-inspection-note" for="alarm-inspection-note">Kısa not <span>isteğe bağlı</span><textarea id="alarm-inspection-note" maxlength="500" placeholder="Örn. Ana arı görüldü, koloni hareketli."></textarea></label>
+      <p id="alarm-inspection-message" class="form-message" role="status"></p>
+    </div>
+    <div class="alarm-confirm-actions">
+      <button id="cancel-alarm-confirm" type="button">Vazgeç</button>
+      <button id="complete-alarm-confirm" class="primary-button" type="button">Sonucu kaydet</button>
+    </div>
+  </dialog>
+
+  <dialog id="hive-delete-dialog" class="alarm-confirm-dialog hive-delete-dialog" aria-labelledby="hive-delete-title">
+    <div class="alarm-confirm-mark" aria-hidden="true">!</div>
+    <div class="alarm-confirm-copy">
+      <p class="eyebrow">GERİ ALINAMAZ</p>
+      <h2 id="hive-delete-title">Kovanı kalıcı olarak sil</h2>
+      <p><strong id="hive-delete-name">—</strong> kovanı ve ona ait bütün kayıtlar veritabanından silinecek. Bu işlem geri alınamaz.</p>
+      <div class="hive-delete-footprint">
+        <span>Silinecek olay <strong id="hive-delete-events">0</strong></span>
+        <span>Silinecek cihaz <strong id="hive-delete-devices">0</strong></span>
+      </div>
+      <p class="hive-delete-note">Bu kovanın geçtiği raporlar korunur; yayımlanmış bir değerlendirme geriye dönük değiştirilmez. Verinin bir kopyasını saklamak isterseniz önce Dışa Aktar bölümünden yedek alın.</p>
+      <p id="hive-delete-message" class="form-message" role="status"></p>
+    </div>
+    <div class="alarm-confirm-actions">
+      <button id="cancel-hive-delete" type="button">Vazgeç</button>
+      <button id="confirm-hive-delete" class="danger-button" type="button">Kalıcı olarak sil</button>
+    </div>
+  </dialog>
+
+  <dialog id="force-password-dialog" class="alarm-confirm-dialog force-password-dialog" aria-labelledby="force-password-title">
+    <div class="alarm-confirm-copy">
+      <p class="eyebrow">İLK GİRİŞ</p>
+      <h2 id="force-password-title">Kendi parolanızı belirleyin</h2>
+      <p>Hesabınız geçici bir parolayla açıldı ve o parolayı bir başkası da biliyor. Kendi parolanızı belirlemeden kayıt gönderemez, saha kontrolü giremez veya alarm kapatamazsınız.</p>
+      <form id="force-password-form" class="force-password-form">
+        <label for="force-current-password">Geçici parola<input id="force-current-password" type="password" autocomplete="current-password" required></label>
+        <label for="force-new-password">Yeni parola<input id="force-new-password" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+        <label for="force-new-password-confirm">Yeni parolayı doğrulayın<input id="force-new-password-confirm" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+        <p id="force-password-message" class="form-message" role="status"></p>
+        <div class="alarm-confirm-actions"><button id="force-password-logout" type="button">Çıkış yap</button><button class="primary-button" type="submit">Parolamı belirle</button></div>
+      </form>
+    </div>
+  </dialog>
 
   <dialog id="onboarding-dialog" class="onboarding-dialog" aria-labelledby="onboarding-title">
     <div class="onboarding-head"><div><p class="eyebrow">HIZLI BAŞLANGIÇ</p><h2 id="onboarding-title">Waggle’a hoş geldiniz</h2><p>Dört kısa adımda kovanlarınızı izlemeye başlayın.</p></div><button id="close-guide" type="button" aria-label="Rehberi kapat">×</button></div>
@@ -218,6 +441,6 @@
   </dialog>
 
   <div id="alert" class="alert" role="alert" aria-live="assertive"></div>
-  <script src="/static/panel.js?v=27"></script>
+  <script src="/static/panel.js?v=86"></script>
 </body>
 </html>
