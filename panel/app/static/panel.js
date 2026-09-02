@@ -101,6 +101,11 @@ const english = {
   "Türkçe rapor": "Turkish report", "İngilizce rapor": "English report", "Üretici": "Generator",
   "Haftalık değerlendirme": "Weekly assessment", "Rapor dönemi": "Report period", "Yerel yapay zekâ": "Local AI",
   "Bu hafta kovanlarda ne oldu?": "What happened in the hives this week?", "Akustik olaylar, saha kontrolleri ve önerilen adımlar tek bir değerlendirmede.": "Acoustic events, field inspections, and recommended actions in one assessment.",
+  "YAPAY ZEKÂ ÖZETİ": "AI SUMMARY", "Kovanı kontrol et": "Inspect the hive",
+  "İki yerel model aynı kararda birleşti.": "Two local models reached the same decision.",
+  "İki yerel model farklı karar verdi; temkinli olan seçildi.": "The two local models disagreed; the more cautious reading was kept.",
+  "DAYANDIĞI KILAVUZ": "GROUNDING NOTES", "Bu değerlendirme neye dayanıyor": "What this assessment rests on",
+  "Yerel kılavuzdan bu döneme uyan notlar seçildi ve modele yalnızca bunlar verildi.": "The notes matching this period were selected from the local guidance, and only those were given to the model.",
   "Değerlendirilen dönem": "Assessment period", "Raporu hazırlayan": "Prepared by", "GENEL DURUM": "OVERALL STATUS", "Haftanın özeti": "Weekly summary", "SONRAKİ ADIMLAR": "NEXT STEPS", "Öncelikli öneriler": "Priority recommendations",
   "Waggle Yerel Rapor Motoru": "Waggle Local Report Engine",
   "SAHA GERİ BİLDİRİMİ": "FIELD FEEDBACK", "Sahada doğrulananlar": "Field-verified outcomes", "Seçili dönemde fiziksel olarak incelenen alarmların sonuçları.": "Outcomes of alerts physically inspected during the selected period.", "Yeniden kontrol gerekli": "Follow-up required", "Yerelde işlendi, kaynaklarla desteklendi": "Processed locally and grounded in sources",
@@ -108,7 +113,7 @@ const english = {
   "Bu rapor döneminde kaydedilen alarm sonuçları": "Alert outcomes recorded during this report period",
   "Yerel ve kaynaklı": "Local and grounded", "SQLite olay geçmişi": "SQLite event history",
   "RAG ile kaynaklandırıldı": "Grounded with RAG", "Agent tarafından hazırlandı": "Prepared by Agent", "kaynak": "sources",
-  "Waggle, akustik değişimleri erken uyarı olarak yorumlar; saha incelemesinin yerini almaz.": "Waggle interprets acoustic changes as early warnings; it does not replace field inspection.",
+  "Waggle, akustik değişimleri erken uyarı olarak yorumlar; saha incelemesinin yerini almaz.": "Waggle interprets acoustic changes as early warnings; it does not replace field inspection.", "SORUMLULUK SINIRI": "SCOPE OF RESPONSIBILITY",
   "Henüz haftalık değerlendirme bulunmuyor. İlk rapor oluşturulduğunda kovanların durumu ve önerilen adımlar burada görünecek.": "No weekly assessment is available yet. Hive status and recommended actions will appear here when the first report is generated.",
   "Olay": "Event", "Günlük": "Daily", "Haftalık": "Weekly", "Tüm kovanlar": "All hives", "Başlangıç": "Start", "Bitiş": "End", "Filtreleri temizle": "Clear filters",
   "AKUSTİK EĞİLİM": "ACOUSTIC TREND", "Dönem içindeki değişim": "Change during the period", "OLAY DAĞILIMI": "EVENT DISTRIBUTION", "Durumlara göre kayıtlar": "Records by status", "DIŞA AKTAR": "EXPORT", "Raporu paylaşın": "Share this report", "Seçili değerlendirmeyi grafikleri ve kaynak bilgileriyle birlikte indirin.": "Download the selected assessment with charts and source details.", "PDF indir": "Download PDF",
@@ -1720,8 +1725,15 @@ function renderReportCharts(report) {
     const series = grouped.map(group => { const points = group.events.map(event => `${x(event.timestamp)},${y(event.anomaly_fraction)}`).join(" "); return `<polyline points="${points}" fill="none" stroke="${group.color}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>${group.events.map(event => `<circle cx="${x(event.timestamp)}" cy="${y(event.anomaly_fraction)}" r="4" fill="#fff" stroke="${group.color}" stroke-width="2"><title>${escapeHtml(explainHiveIds(group.hiveId))} · ${dateLabel(event.timestamp)} · ${Math.round(event.anomaly_fraction*100)}%</title></circle>`).join("")}`; }).join("");
     const averageY = y(average);
     const averageLabelAbove = averageY > 40;
-    const averageLine = `<line x1="62" y1="${averageY}" x2="688" y2="${averageY}" stroke="#c09256" stroke-width="1.5" stroke-dasharray="6 5"/><text x="686" y="${averageY + (averageLabelAbove ? -8 : 15)}" text-anchor="end" fill="#96682d" font-size="10" font-weight="850">${currentLanguage === "en" ? `Average ${Math.round(average*100)}%` : `Ortalama %${Math.round(average*100)}`}</text>`;
-    svg.innerHTML = `<rect x="58" y="23" width="634" height="168" rx="11" fill="#fffdf9"/>${grid}${averageLine}${series}<text x="62" y="211" fill="#756d64" font-size="10" font-weight="700">${startLabel}</text><text x="688" y="211" text-anchor="end" fill="#756d64" font-size="10" font-weight="700">${endLabel}</text><text x="375" y="229" text-anchor="middle" fill="#8a8176" font-size="10">${currentLanguage === "en" ? "Time" : "Zaman"}</text><text transform="rotate(-90 13 107)" x="13" y="107" text-anchor="middle" fill="#8a8176" font-size="10">${currentLanguage === "en" ? "Anomalous audio (%)" : "Aykırı ses (%)"}</text>`;
+    // The label was bare text drawn before the series, so any hive whose line ran near the
+    // average was painted straight through the words. The dashes stay under the data — it
+    // is a reference, not a reading — but the label rides on top, on its own chip.
+    const averageText = currentLanguage === "en" ? `Average ${Math.round(average * 100)}%` : `Ortalama %${Math.round(average * 100)}`;
+    const averageLabelWidth = averageText.length * 6.4 + 16;
+    const averageLabelY = averageY + (averageLabelAbove ? -9 : 16);
+    const averageDashes = `<line x1="62" y1="${averageY}" x2="688" y2="${averageY}" stroke="#c09256" stroke-width="1.5" stroke-dasharray="6 5"/>`;
+    const averageLabel = `<rect x="${688 - averageLabelWidth}" y="${averageLabelY - 11}" width="${averageLabelWidth}" height="15" rx="7.5" fill="#fffdf9" stroke="#e6d3b0" stroke-width="1"/><text x="680" y="${averageLabelY}" text-anchor="end" fill="#96682d" font-size="10" font-weight="850">${averageText}</text>`;
+    svg.innerHTML = `<rect x="58" y="23" width="634" height="168" rx="11" fill="#fffdf9"/>${grid}${averageDashes}${series}${averageLabel}<text x="62" y="211" fill="#756d64" font-size="10" font-weight="700">${startLabel}</text><text x="688" y="211" text-anchor="end" fill="#756d64" font-size="10" font-weight="700">${endLabel}</text><text x="375" y="229" text-anchor="middle" fill="#8a8176" font-size="10">${currentLanguage === "en" ? "Time" : "Zaman"}</text><text transform="rotate(-90 13 107)" x="13" y="107" text-anchor="middle" fill="#8a8176" font-size="10">${currentLanguage === "en" ? "Anomalous audio (%)" : "Aykırı ses (%)"}</text>`;
     document.querySelector("#report-trend-legend").innerHTML = grouped.map(group => {
       const share = group.events.reduce((sum, event) => sum + (Number(event.anomaly_fraction) || 0), 0) / group.events.length;
       return `<span class="chart-legend"><i style="background:${group.color}"></i>${escapeHtml(explainHiveIds(group.hiveId))}<b>%${Math.round(share * 100)}</b></span>`;
@@ -1767,14 +1779,55 @@ function renderReportVerdict(report, events) {
   verdict.className = `report-verdict ${tone}`;
   document.querySelector("#report-verdict-title").textContent = title;
   document.querySelector("#report-verdict-note").textContent = isEnglish ? `Based on ${events.length} acoustic records in the report period` : `Rapor dönemindeki ${events.length} akustik kayda göre`;
+  // The banner used to be a sentence with 400px of empty space beside it. The hive it is
+  // talking about is known here, so the banner can be the way to it.
+  const attention = states.find(item => item.state === "alarm") || states.find(item => item.state === "watch");
+  document.querySelector("#report-verdict-action").innerHTML = attention
+    ? `<button class="report-verdict-open" data-hive-detail="${escapeHtml(attention.hiveId)}" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19.5 6v6.4c0 4.2-3 7.6-7.5 9.4-4.5-1.8-7.5-5.2-7.5-9.4V6Z"/><path d="m8.8 12.2 2.4 2.4 4.2-4.6"/></svg>${isEnglish ? "Inspect the hive" : "Kovanı kontrol et"}</button>`
+    : "";
   const stateLabels = {
     alarm: isEnglish ? "Urgent check" : "Acil kontrol",
     watch: isEnglish ? "Under watch" : "İzlemede",
     normal: isEnglish ? "Steady" : "Düzenli",
     idle: isEnglish ? "No records" : "Kayıt yok"
   };
-  document.querySelector("#report-hive-states").innerHTML = states.map(item => `<article class="report-hive-state ${item.state}"><span class="report-hive-state-name"><i aria-hidden="true"></i>${escapeHtml(explainHiveIds(item.hiveId))}</span><strong>${stateLabels[item.state]}</strong><small>${item.count} ${isEnglish ? "records" : "kayıt"}</small></article>`).join("");
+    // The glyph sits with the hive name, not beside the verdict: at three columns the card
+  // is 178px inside, and taking 56px of that made "Urgent check" wrap onto two lines.
+  document.querySelector("#report-hive-states").innerHTML = states.map(item => `<article class="report-hive-state ${item.state}"><span class="report-hive-state-name">${REPORT_HIVE_GLYPH}${escapeHtml(explainHiveIds(item.hiveId))}</span><strong>${stateLabels[item.state]}</strong><small>${item.count} ${isEnglish ? "records" : "kayıt"}</small></article>`).join("");
   renderReportActions(report, states, isEnglish);
+}
+
+// One hive glyph tinted by state, rather than an icon guessed from the hive's name — a
+// hive called "Dedemin kovanı" has no forest or flower to draw.
+const REPORT_HIVE_GLYPH = `<span class="report-hive-glyph" aria-hidden="true"><svg viewBox="0 0 40 40"><path class="glyph-frame" d="M20 3.5 33 11v18L20 36.5 7 29V11Z"/><path class="glyph-hive" d="M13.5 17 20 12.3 26.5 17M12.6 17h14.8M12 21.4h16M12.6 25.8h14.8M13.2 25.8 14 29.4h12l.8-3.6"/><ellipse class="glyph-door" cx="20" cy="26" rx="2.2" ry="2.6"/></svg></span>`;
+
+const ACTION_TAG_ICONS = {
+  alarm: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.8v5M12 16.1v.1"/></svg>`,
+  watch: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.9 12S6.6 7 12 7s9.1 5 9.1 5-3.7 5-9.1 5-9.1-5-9.1-5Z"/><circle cx="12" cy="12" r="2.3"/></svg>`,
+  normal: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="m8.4 12.3 2.6 2.6 4.6-5.2"/></svg>`,
+};
+ACTION_TAG_ICONS.idle = ACTION_TAG_ICONS.normal;
+
+// A source count is a claim; the passages themselves are the evidence. A report stores
+// only their ids, so the texts are fetched and shown beside the assessment they shaped.
+let guidanceCache = null;
+
+async function renderReportSources(ids) {
+  const card = document.querySelector("#report-sources-card");
+  if (!ids || !ids.length) { card.hidden = true; return; }
+  try {
+    if (!guidanceCache || guidanceCache.language !== currentLanguage) {
+      const notes = await fetch(`/api/guidance?language=${currentLanguage}`).then(response => response.json());
+      guidanceCache = {language: currentLanguage, byId: new Map(notes.map(note => [note.id, note]))};
+    }
+    const found = ids.map(id => guidanceCache.byId.get(id)).filter(Boolean);
+    if (!found.length) { card.hidden = true; return; }
+    document.querySelector("#report-sources-list").innerHTML = found.map(note =>
+      `<li><span class="report-source-id">${escapeHtml(note.id)}</span><p>${escapeHtml(note.text)}</p></li>`).join("");
+    card.hidden = false;
+  } catch (error) {
+    card.hidden = true;
+  }
 }
 
 function renderReportActions(report, states, isEnglish) {
@@ -1790,7 +1843,10 @@ function renderReportActions(report, states, isEnglish) {
     const hiveId = (report.hive_ids || []).find(id => new RegExp(`(^|[^A-Za-z0-9])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z0-9]|$)`).test(item));
     const state = (hiveId && stateByHive.get(hiveId)) || "normal";
     const action = hiveId ? `<button class="report-action-open" data-hive-detail="${escapeHtml(hiveId)}" type="button">${openLabel}</button>` : "";
-    return `<li class="${state}"><div><span class="report-action-tag">${tags[state]}</span><p>${escapeHtml(explainHiveIds(item))}</p></div>${action}</li>`;
+    // Priority sits to the right as a chip rather than stacked over the sentence: the row
+    // then reads number → what to do → how urgent, on one line, and fills the space the
+    // "open hive" button leaves empty on most recommendations.
+    return `<li class="${state}"><p>${escapeHtml(explainHiveIds(item))}</p><span class="report-action-tag">${ACTION_TAG_ICONS[state]}${tags[state]}</span>${action}</li>`;
   }).join("");
 }
 
@@ -1822,6 +1878,14 @@ function renderSelectedReport() {
   const isDeterministicDemo = generator.toLowerCase() === "deterministic-demo";
   const isSafeFallback = generator.toLowerCase() === "safe-fallback";
   document.querySelector("#report-source").textContent = isAgent ? "Agent Framework + Foundry Local" : isFoundry ? "Foundry Local · Phi" : isSafeFallback ? t("Deterministik yedek motor") : isDeterministicDemo ? t("Waggle Yerel Rapor Motoru") : generator;
+  // A second local model checked the priority. Whether the two agreed is part of how much
+  // the reader should trust the number, so it is said rather than left in a log file.
+  const crossChecked = generator.includes("+");
+  const disagreed = generator.includes("(disagreed)");
+  document.querySelector("#report-cross-check").textContent = !crossChecked ? ""
+    : disagreed ? t("İki yerel model farklı karar verdi; temkinli olan seçildi.")
+    : t("İki yerel model aynı kararda birleşti.");
+  document.querySelector("#report-cross-check").className = `report-cross-check${disagreed ? " disagreed" : crossChecked ? " agreed" : ""}`;
   const groundingSources = report.grounding_sources || [];
   document.querySelector("#report-provenance").textContent = [isSafeFallback ? t("Yapay zekâ modeline ulaşılamadı") : "", groundingSources.length ? t("RAG ile kaynaklandırıldı") : "", isAgent ? t("Agent tarafından hazırlandı") : ""].filter(Boolean).join(" · ");
   document.querySelector(".report-aside-meta").classList.toggle("is-degraded", isSafeFallback);
@@ -1833,6 +1897,7 @@ function renderSelectedReport() {
     ? t("Metin yerel model tarafından yazıldı")
     : groundingSources.length ? t("Yerelde işlendi, kaynaklarla desteklendi") : t("Yerelde işlendi");
   const groundingDetail = groundingSources.length ? `Foundry Local + RAG + SQLite · ${groundingSources.length} ${t("kaynak")}` : t("Kaynak kaydı yok · SQLite olay geçmişi");
+  renderReportSources(groundingSources);
   document.querySelector("#report-grounding-detail").textContent = modelWroteText ? `${t("Karar deterministik doğrulayıcıdan geldi")} · ${groundingDetail}` : groundingDetail;
   const scopeDate = value => new Intl.DateTimeFormat(currentLanguage === "tr" ? "tr-TR" : "en-GB", { dateStyle: "short" }).format(new Date(value));
   const scopeHives = report.hive_ids || [];
@@ -2251,9 +2316,11 @@ hivesEl.addEventListener("click", event => {
   const button = event.target.closest("[data-hive-detail]");
   if (button) openHiveDetail(button.dataset.hiveDetail);
 });
-document.querySelector("#report-actions").addEventListener("click", event => {
-  const button = event.target.closest("[data-hive-detail]");
-  if (button) openHiveDetail(button.dataset.hiveDetail);
+["#report-actions", "#report-verdict"].forEach(selector => {
+  document.querySelector(selector).addEventListener("click", event => {
+    const button = event.target.closest("[data-hive-detail]");
+    if (button) openHiveDetail(button.dataset.hiveDetail);
+  });
 });
 document.querySelector("#back-overview").addEventListener("click", () => {
   selectedHiveId = null;
@@ -2263,8 +2330,25 @@ document.querySelectorAll(".nav-button").forEach(button => button.addEventListen
   selectedHiveId = null;
   showView(button.dataset.view, true);
 }));
+// The brand is an anchor so it behaves like a link for the keyboard, but the view change
+// is handled here: the hash router deliberately ignores "overview", so following the href
+// on its own would do nothing.
+document.querySelector(".panel-brand").addEventListener("click", event => {
+  event.preventDefault();
+  selectedHiveId = null;
+  showView("overview", true);
+});
 window.addEventListener("resize", () => updateNavIndicator());
 requestAnimationFrame(() => updateNavIndicator());
+// The underline was only repositioned on click and on window resize, so anything else
+// that changed a button's width left it sitting off the label: switching language
+// (Raporlar → Reports is 9px narrower), the alarm badge appearing after the first fetch,
+// or a webfont arriving late. Watching the buttons themselves catches all of them.
+if (window.ResizeObserver) {
+  const navResize = new ResizeObserver(() => updateNavIndicator());
+  document.querySelectorAll(".nav-button").forEach(button => navResize.observe(button));
+}
+document.fonts?.ready.then(() => updateNavIndicator());
 document.querySelector("#show-hive-form").addEventListener("click", () => {
   resetHiveForm();
   hiveForm.hidden = false;

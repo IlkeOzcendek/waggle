@@ -1,32 +1,399 @@
 [
   {
     "id": "alarm-interpretation",
-    "tags": ["ALARM", "persistent_acoustic_change", "queen_loss", "diagnosis"],
+    "tags": [
+      "ALARM",
+      "persistent_acoustic_change",
+      "queen_loss",
+      "diagnosis"
+    ],
     "tr": "Kalıcı akustik değişim kraliçe kaybıyla uyumlu olabilir, tek başına kesin tanı değildir.",
-    "en": "Persistent acoustic change may be compatible with queen loss; it is not a definitive diagnosis on its own."
+    "en": "Persistent acoustic change may be compatible with queen loss; it is not a definitive diagnosis on its own.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ]
+    }
   },
   {
     "id": "alarm-inspection",
-    "tags": ["ALARM", "inspect_hive", "check_queen"],
+    "tags": [
+      "ALARM",
+      "inspect_hive",
+      "check_queen"
+    ],
     "tr": "Alarm sonrasında kovan fiziksel olarak incelenmeli, kraliçenin varlığı ve koloninin genel durumu doğrulanmalıdır.",
-    "en": "After an alarm, physically inspect the hive and verify queen presence and overall colony condition."
+    "en": "After an alarm, physically inspect the hive and verify queen presence and overall colony condition.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ]
+    }
+  },
+  {
+    "id": "alarm-sustained-run",
+    "tags": [
+      "ALARM",
+      "consecutive_anomalies",
+      "sustained",
+      "priority"
+    ],
+    "tr": "Aykırı pencereler arka arkaya uzun sürüyorsa değişim anlık bir gürültü değil, kalıcı bir durumdur; kontrolü öne alın.",
+    "en": "A long unbroken run of anomalous windows means the change is a lasting condition rather than passing noise; bring the inspection forward.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ],
+      "min_consecutive": 20
+    }
+  },
+  {
+    "id": "alarm-very-high-fraction",
+    "tags": [
+      "ALARM",
+      "anomaly_fraction",
+      "dominant"
+    ],
+    "tr": "Kayıtların büyük bölümü aykırı çıkıyorsa ses profili tümüyle değişmiş demektir; mikrofon konumunu da doğrulayın.",
+    "en": "When most windows are anomalous the acoustic profile has shifted wholesale; verify the microphone position as well as the colony.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ],
+      "min_anomaly": 0.85
+    }
+  },
+  {
+    "id": "queenless-signs",
+    "tags": [
+      "ALARM",
+      "queen_loss",
+      "laying_worker",
+      "brood",
+      "field_check"
+    ],
+    "tr": "Kraliçesizlikte yumurta bulunmaz, düzensiz ve tümsek erkek arı gözleri görülebilir; kovan sesi tizleşip sürekli hâle gelir.",
+    "en": "Queenlessness shows as absent eggs, scattered raised drone cells, and a higher, more continuous colony sound.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ]
+    }
+  },
+  {
+    "id": "queen-replacement",
+    "tags": [
+      "ALARM",
+      "queen_loss",
+      "requeen",
+      "action"
+    ],
+    "tr": "Kraliçesizlik doğrulanırsa yeni kraliçe verin ya da yumurtalı çerçeve ekleyerek koloniye kendi kraliçesini yetiştirme şansı tanıyın.",
+    "en": "If queenlessness is confirmed, introduce a new queen or add a frame of eggs so the colony can raise its own.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ]
+    }
   },
   {
     "id": "watch-follow-up",
-    "tags": ["WATCH", "developing_acoustic_change", "record_again", "continue_monitoring"],
-    "tr": "WATCH gelişen bir değişimi belirtir. Yeni kayıt alınmalı ve değişimin kalıcı olup olmadığı izlenmelidir.",
-    "en": "WATCH indicates a developing change. Capture another recording and monitor whether the change persists."
+    "tags": [
+      "WATCH",
+      "developing_acoustic_change",
+      "record_again",
+      "continue_monitoring"
+    ],
+    "tr": "Gelişen akustik değişimde kaydı tekrarlayın ve eğilimi izleyin; tek kayıt karar için yeterli değildir.",
+    "en": "For a developing acoustic change, record again and follow the trend; a single recording is not enough to decide.",
+    "conditions": {
+      "status": [
+        "WATCH"
+      ]
+    }
+  },
+  {
+    "id": "watch-timing",
+    "tags": [
+      "WATCH",
+      "recording_time",
+      "comparable",
+      "method"
+    ],
+    "tr": "Karşılaştırmanın anlamlı olması için kayıtları her gün benzer saatte ve benzer hava koşulunda alın.",
+    "en": "Take recordings at a similar time of day and in similar weather so the comparison stays meaningful.",
+    "conditions": {
+      "status": [
+        "WATCH",
+        "NORMAL"
+      ]
+    }
+  },
+  {
+    "id": "watch-short-run",
+    "tags": [
+      "WATCH",
+      "consecutive_anomalies",
+      "transient"
+    ],
+    "tr": "Aykırı pencereler kısa ve dağınıksa geçici bir dış etken olabilir; kovanı açmadan önce bir kayıt daha alın.",
+    "en": "Short, scattered anomalous runs can be a passing external cause; take another recording before opening the hive.",
+    "conditions": {
+      "status": [
+        "WATCH"
+      ],
+      "max_consecutive": 8
+    }
   },
   {
     "id": "normal-baseline",
-    "tags": ["NORMAL", "baseline", "continue_monitoring"],
-    "tr": "NORMAL sonucu sesin kovan için öğrenilmiş sağlıklı profil içinde kaldığını gösterir; rutin izleme sürdürülmelidir.",
-    "en": "A NORMAL result means the audio remained within the hive's learned healthy profile; routine monitoring should continue."
+    "tags": [
+      "NORMAL",
+      "baseline",
+      "continue_monitoring"
+    ],
+    "tr": "Normal aralıktaki kayıtlar profili güçlendirir; düzenli kayıt almaya devam edin.",
+    "en": "Recordings in the normal range strengthen the profile; keep collecting regularly.",
+    "conditions": {
+      "status": [
+        "NORMAL"
+      ]
+    }
+  },
+  {
+    "id": "normal-profile-drift",
+    "tags": [
+      "NORMAL",
+      "baseline",
+      "seasonal_drift",
+      "profile"
+    ],
+    "tr": "Koloni büyüdükçe ses profili de doğal olarak değişir; mevsim boyunca düzenli kayıt bu kaymayı profile öğretir.",
+    "en": "A colony's sound naturally changes as it grows; regular recordings through the season teach the profile that drift.",
+    "conditions": {
+      "status": [
+        "NORMAL"
+      ]
+    }
   },
   {
     "id": "field-verification",
-    "tags": ["baseline", "health_confirmation", "queen", "brood"],
-    "tr": "Sağlıklı başlangıç profili aynı kovan ve mikrofonla farklı günlerde alınan kayıtlar ve düzenli saha doğrulamalarıyla oluşturulmalıdır",
-    "en": "Build the healthy baseline from recordings taken on different days with the same hive and microphone, supported by periodic field confirmations"
+    "tags": [
+      "baseline",
+      "health_confirmation",
+      "queen",
+      "brood"
+    ],
+    "tr": "Saha doğrulaması kraliçenin görülmesi, yumurta ve yavru düzeni ile koloninin genel görünümüne dayanmalıdır.",
+    "en": "A field check should rest on seeing the queen, the pattern of eggs and brood, and the colony's overall condition."
+  },
+  {
+    "id": "field-uncertainty",
+    "tags": [
+      "health_confirmation",
+      "uncertain",
+      "training_data"
+    ],
+    "tr": "Emin değilseniz doğrulamayı «emin değilim» olarak işaretleyin; şüpheli kayıt profile eklenmez ve model yanlış öğrenmez.",
+    "en": "If you are unsure, mark the check as uncertain; a doubtful recording is kept out of the profile so the model is not taught the wrong baseline."
+  },
+  {
+    "id": "season-spring-swarm",
+    "tags": [
+      "swarming",
+      "spring",
+      "queen_cells",
+      "seasonal"
+    ],
+    "tr": "İlkbaharda ses değişiminin sık görülen sebebi oğul hazırlığıdır; çerçevelerde ana arı beyi (oğul gözü) arayın.",
+    "en": "In spring a common cause of sound change is swarm preparation; look for queen cells on the frames.",
+    "conditions": {
+      "months": [
+        3,
+        4,
+        5,
+        6
+      ]
+    }
+  },
+  {
+    "id": "season-summer-robbing",
+    "tags": [
+      "robbing",
+      "summer",
+      "dearth",
+      "seasonal"
+    ],
+    "tr": "Nektar akımının kesildiği sıcak dönemde yağmacılık sesi yükseltir; uçuş deliğini daraltın ve kovan önünü gözleyin.",
+    "en": "In hot dearth periods robbing raises the sound level; reduce the entrance and watch the hive front.",
+    "conditions": {
+      "months": [
+        7,
+        8
+      ]
+    }
+  },
+  {
+    "id": "season-autumn-varroa",
+    "tags": [
+      "varroa",
+      "autumn",
+      "mite",
+      "treatment",
+      "seasonal"
+    ],
+    "tr": "Sonbaharda varroa yükü kolonide huzursuzluk ve ses değişimi yapabilir; kışlatma öncesi sayım ve tedavi planlayın.",
+    "en": "In autumn a varroa load can unsettle the colony and change its sound; count and plan treatment before wintering.",
+    "conditions": {
+      "months": [
+        9,
+        10,
+        11
+      ]
+    }
+  },
+  {
+    "id": "season-winter-cluster",
+    "tags": [
+      "winter",
+      "cluster",
+      "stores",
+      "seasonal",
+      "do_not_open"
+    ],
+    "tr": "Kışın küme sesi normalde alçak ve düzenlidir; kovanı gereksiz açmayın, önce ağırlık ve giriş gözlemiyle karar verin.",
+    "en": "In winter the cluster's sound is normally low and steady; avoid opening the hive and judge first by weight and entrance activity.",
+    "conditions": {
+      "months": [
+        12,
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "id": "false-alarm-weather",
+    "tags": [
+      "method",
+      "weather",
+      "wind",
+      "rain",
+      "false_positive"
+    ],
+    "tr": "Rüzgâr, yağmur ve yakın makine gürültüsü kaydı bozar; böyle koşullarda alınan kayıtları tekrarlayın.",
+    "en": "Wind, rain and nearby machinery corrupt a recording; repeat any recording taken in those conditions."
+  },
+  {
+    "id": "false-alarm-microphone",
+    "tags": [
+      "method",
+      "microphone",
+      "placement",
+      "false_positive"
+    ],
+    "tr": "Mikrofonun yeri değiştiyse ses profili de değişir; kaydı hep aynı noktadan ve aynı mesafeden alın.",
+    "en": "Moving the microphone changes the profile; always record from the same point and the same distance."
+  },
+  {
+    "id": "false-alarm-recent-intervention",
+    "tags": [
+      "method",
+      "intervention",
+      "false_positive"
+    ],
+    "tr": "Yeni bal hasadı, ilaçlama veya çerçeve düzenlemesi koloniyi günlerce huzursuz eder; son müdahaleyi göz önünde bulundurun.",
+    "en": "A recent harvest, treatment or frame rearrangement unsettles a colony for days; take the last intervention into account."
+  },
+  {
+    "id": "colony-moisture",
+    "tags": [
+      "moisture",
+      "ventilation",
+      "winter",
+      "condensation"
+    ],
+    "tr": "Kovan içi nem ve yetersiz havalandırma kanat sesini ve koloni davranışını değiştirir; kapak altını ve tabanı kontrol edin.",
+    "en": "Damp and poor ventilation change wing sound and colony behaviour; check under the cover and at the floor."
+  },
+  {
+    "id": "colony-starvation",
+    "tags": [
+      "stores",
+      "starvation",
+      "feeding",
+      "weak_colony"
+    ],
+    "tr": "Yem yetersizliğinde koloni sesi zayıflar ve düzensizleşir; çerçeve ağırlığını kontrol edip gerekirse besleme yapın.",
+    "en": "When stores run low the colony sound weakens and becomes irregular; check frame weight and feed if needed."
+  },
+  {
+    "id": "colony-strength",
+    "tags": [
+      "weak_colony",
+      "population",
+      "merge"
+    ],
+    "tr": "Zayıf kolonide ses hem alçak hem düzensizdir; birleştirme ya da destek çerçevesi seçeneklerini değerlendirin.",
+    "en": "A weak colony sounds both quiet and irregular; consider merging it or adding a support frame."
+  },
+  {
+    "id": "colony-drone-laying",
+    "tags": [
+      "laying_worker",
+      "drone",
+      "brood",
+      "ALARM"
+    ],
+    "tr": "Yalancı ana (yumurtlayan işçi) durumunda erkek arı gözleri düzensiz ve tümsektir; kraliçe kabulü zorlaşır.",
+    "en": "With laying workers the drone cells are scattered and raised, and a new queen is hard to introduce.",
+    "conditions": {
+      "status": [
+        "ALARM"
+      ]
+    }
+  },
+  {
+    "id": "method-recording-length",
+    "tags": [
+      "method",
+      "recording",
+      "duration"
+    ],
+    "tr": "Kayıt en az birkaç dakika sürmeli; çok kısa kayıtlar tek bir anlık sesi tüm koloniye mal eder.",
+    "en": "A recording should run for at least a few minutes; a very short clip lets one momentary sound stand for the whole colony."
+  },
+  {
+    "id": "method-one-microphone",
+    "tags": [
+      "method",
+      "microphone",
+      "profile",
+      "consistency"
+    ],
+    "tr": "Her kovanın profili kendi mikrofonuyla öğrenilir; cihaz değişirse profil baştan öğrenilmelidir.",
+    "en": "Each hive's profile is learned with its own microphone; changing the device means learning the profile again."
+  },
+  {
+    "id": "limits-not-diagnosis",
+    "tags": [
+      "limits",
+      "diagnosis",
+      "responsibility"
+    ],
+    "tr": "Akustik izleme erken uyarı verir, teşhis koymaz; her uyarı saha incelemesiyle doğrulanmalıdır.",
+    "en": "Acoustic monitoring gives an early warning, not a diagnosis; every warning must be confirmed in the field."
+  },
+  {
+    "id": "limits-multiple-hives",
+    "tags": [
+      "limits",
+      "multiple_hives",
+      "comparison"
+    ],
+    "tr": "Birden fazla kovanda aynı anda değişim varsa sebep genellikle çevreseldir; tek kovandaki değişim koloniye özgüdür.",
+    "en": "When several hives change at once the cause is usually environmental; a change in one hive alone points to that colony.",
+    "conditions": {
+      "min_hives": 2
+    }
   }
 ]
