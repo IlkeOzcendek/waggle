@@ -583,6 +583,6 @@ the repository are the ones under `results/`.
   <strong>Waggle</strong><br/>
   <em>Listen for what the hive cannot say.</em><br/><br/>
   Created by <strong>İlke Özçendek</strong> and <strong>İrem Erkmen</strong><br/>
-  <sub>Microsoft AI Innovators Summer Program · 2026</sub><br/><br/>
+  <sub>Microsoft AI Innovators Summer Internship Program · 2026</sub><br/><br/>
   <a href="LICENSE">MIT licensed</a>
 </p>
