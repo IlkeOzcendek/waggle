@@ -122,7 +122,7 @@ class SetupFlowTest(unittest.TestCase):
                 self.assertEqual(owner["username"], "ilke")
                 self.assertIs(owner["demo_mode"], False)
 
-                demo_client.cookies.set(main.COOKIE_NAME, main.create_session(main.ADMIN_USERNAME))
+                demo_client.cookies.set(main.COOKIE_NAME, main.create_session(main.ADMIN_USERNAME, stamp=main._stamp_for(main.ADMIN_USERNAME)))
                 demo = demo_client.get("/api/me").json()
                 self.assertEqual(demo["username"], main.ADMIN_USERNAME)
                 self.assertIs(demo["demo_mode"], True)
@@ -325,7 +325,7 @@ class SetupFlowTest(unittest.TestCase):
 
     def test_demo_account_is_not_demo_when_demo_mode_is_off(self):
         client = TestClient(main.app)
-        client.cookies.set(main.COOKIE_NAME, main.create_session(main.ADMIN_USERNAME))
+        client.cookies.set(main.COOKIE_NAME, main.create_session(main.ADMIN_USERNAME, stamp=main._stamp_for(main.ADMIN_USERNAME)))
         self.assertIs(client.get("/api/me").json()["demo_mode"], False)
         client.close()
 

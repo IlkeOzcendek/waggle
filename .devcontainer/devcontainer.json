@@ -1,0 +1,33 @@
+{
+  // Codespaces açıldığında Waggle panelini kendiliğinden çalışır halde sunar: deneyecek
+  // kişinin repoyu klonlaması, Python kurması ya da bağımlılıkları yüklemesi gerekmez.
+  //
+  // Buradaki demo yerel bir modele ihtiyaç duymaz. Foundry Local bir Codespace'te yok,
+  // olması da gerekmiyor: panel model bulamadığında deterministik rapora düşer, yani
+  // ziyaretçi kovanları, olayları, grafikleri ve gerçek bir raporu eksiksiz görür.
+  // Model destekli rapor, mimarinin gereği, kullanıcının kendi makinesinde çalışır.
+  "name": "Waggle",
+
+  // CI 3.9 ve 3.11 ile test ediyor. Buradaki 3.11, Microsoft Agent Framework'ün de
+  // çalıştığı sürüm olduğu için ikisinden daha yeteneklisi.
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  "postCreateCommand": "pip install --no-cache-dir -r requirements.txt",
+
+  // Konteyner hazır olduğunda demo başlar ve 8000 portu tarayıcı sekmesinde açılır.
+  "postAttachCommand": "python tools/run_demo.py",
+
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "Waggle paneli",
+      "onAutoForward": "openPreview"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}

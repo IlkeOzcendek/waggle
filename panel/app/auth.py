@@ -148,20 +148,46 @@ def validate_security_config() -> list[str]:
     return warnings
 
 
+def _same_text(left: str, right: str) -> bool:
+    """A constant-time comparison that survives a Turkish name.
+
+    hmac.compare_digest refuses str arguments holding a character above ASCII, and raises
+    TypeError rather than returning False. Every value compared here is text a person or a
+    device sends, so on a Turkish panel that is not an edge case: signing in as "İlke"
+    reached this function, raised inside it, and the sign-in screen answered 500 — the
+    account could not be used at all while the panel had no row of its own for it.
+    Comparing the encoded bytes is the same comparison without the restriction.
+    """
+    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
 def verify_credentials(username: str, password: str) -> bool:
     candidate = hashlib.pbkdf2_hmac("sha256", password.encode(), _PASSWORD_SALT, 210_000)
-    return hmac.compare_digest(username, ADMIN_USERNAME) and hmac.compare_digest(
+    return _same_text(username, ADMIN_USERNAME) and hmac.compare_digest(
         candidate, _PASSWORD_HASH
     )
 
 
 def verify_device_key(device_key: str | None) -> bool:
-    return bool(device_key) and hmac.compare_digest(device_key, _DEVICE_KEY)
+    # The header arrives as latin-1 text, so a byte above 127 in it lands here as non-ASCII.
+    return bool(device_key) and _same_text(device_key, _DEVICE_KEY)
 
 
-def create_session(username: str, seconds: int | None = None) -> str:
+def password_stamp(password_hash: str) -> str:
+    """A short marker of the password a session was opened with.
+
+    Sessions are signed tokens with no server-side record, so there is no list of open
+    sessions to revoke. Carrying this marker in the token gives the same result: change the
+    password and every token minted under the old one stops matching. It is keyed with the
+    session secret rather than plainly hashed because whoever holds the cookie can read its
+    payload, and a bare hash of the stored hash would be a stable handle on the password.
+    """
+    return hmac.new(_SESSION_SECRET, password_hash.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def create_session(username: str, seconds: int | None = None, stamp: str = "") -> str:
     expires_at = int(time.time()) + (seconds or SESSION_SECONDS)
-    payload = f"{username}|{expires_at}".encode()
+    payload = f"{username}|{expires_at}|{stamp}".encode()
     signature = hmac.new(_SESSION_SECRET, payload, hashlib.sha256).digest()
     encoded_payload = base64.urlsafe_b64encode(payload).decode().rstrip("=")
     encoded_signature = base64.urlsafe_b64encode(signature).decode().rstrip("=")
@@ -169,6 +195,12 @@ def create_session(username: str, seconds: int | None = None) -> str:
 
 
 def read_session(token: str | None) -> str | None:
+    details = read_session_details(token)
+    return details[0] if details else None
+
+
+def read_session_details(token: str | None) -> tuple[str, str] | None:
+    """The username a valid token names, and the password stamp it was minted with."""
     if not token:
         return None
     try:
@@ -186,9 +218,16 @@ def read_session(token: str | None) -> str | None:
         expected = hmac.new(_SESSION_SECRET, payload, hashlib.sha256).digest()
         if not hmac.compare_digest(signature, expected):
             return None
-        username, expires_at = payload.decode().rsplit("|", 1)
+        # Usernames are restricted to letters, digits, - and _, so "|" only ever separates
+        # fields. Tokens minted before the stamp existed have two fields, not three.
+        fields = payload.decode().split("|")
+        if len(fields) == 2:
+            fields.append("")
+        if len(fields) != 3:
+            return None
+        username, expires_at, stamp = fields
         if int(expires_at) < int(time.time()):
             return None
-        return username
+        return username, stamp
     except (ValueError, UnicodeDecodeError):
         return None

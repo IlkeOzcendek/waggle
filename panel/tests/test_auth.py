@@ -26,6 +26,22 @@ class AuthenticationTest(unittest.TestCase):
         self.assertTrue(verify_credentials("admin", "waggle-demo"))
         self.assertFalse(verify_credentials("admin", "wrong-password"))
 
+    def test_a_turkish_username_is_rejected_rather_than_raising(self):
+        """hmac.compare_digest raises TypeError on a str holding a character above ASCII.
+
+        Measured on a running panel: signing in as "İlke" while the only account was the
+        demo owner answered 500, and the sign-in screen showed a JSON parse error because
+        a 500 body is not JSON. A wrong username has to be a wrong username.
+        """
+        for username in ("İlke", "Şeyma", "Gülçin", "çağrı"):
+            with self.subTest(username=username):
+                self.assertFalse(verify_credentials(username, "waggle-demo"))
+
+    def test_a_non_ascii_device_key_is_rejected_rather_than_raising(self):
+        """The header arrives as latin-1 text, so any byte above 127 in it lands here."""
+        self.assertFalse(verify_device_key("cihaz-anahtarı"))
+        self.assertFalse(verify_device_key("ünïcode"))
+
     def test_signed_session(self):
         token = create_session("admin")
         self.assertEqual(read_session(token), "admin")
@@ -77,7 +93,7 @@ class RememberMeTest(unittest.TestCase):
             payload = base64.urlsafe_b64decode(
                 token.split(".", 1)[0] + "=" * (-len(token.split(".", 1)[0]) % 4)
             )
-            return int(payload.decode().rsplit("|", 1)[1])
+            return int(payload.decode().split("|")[1])
 
         self.assertGreater(expiry(remembered), expiry(ordinary))
         self.assertGreater(REMEMBERED_SESSION_SECONDS, SESSION_SECONDS)

@@ -19,7 +19,13 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from panel.app.auth import hash_password
+# This is the recovery path a locked-out owner reaches for, printed on the sign-in screen,
+# so it has to run however it is typed. `python -m tools.reset_password` puts the project
+# root on the path; `python tools/reset_password.py` — which the shebang above invites —
+# puts only tools/ there, and the import below failed with "No module named 'panel'".
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from panel.app.auth import hash_password  # noqa: E402 - the path above has to be set first
 
 MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_LENGTH = 128

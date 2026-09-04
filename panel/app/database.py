@@ -9,6 +9,7 @@ from typing import Iterator
 
 import json
 
+from .auth import password_stamp
 from .models import Device, DeviceCreate, EnrollmentStatus, HealthConfirmation, HealthConfirmationIn, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveSummary, HiveUpdate, Report, ReportIn
 
 
@@ -19,6 +20,22 @@ from .models import Device, DeviceCreate, EnrollmentStatus, HealthConfirmation, 
 REQUIRED_RECORDINGS = max(int(os.getenv("WAGGLE_ENROLLMENT_RECORDINGS", "42")), 1)
 REQUIRED_DAYS = max(int(os.getenv("WAGGLE_ENROLLMENT_DAYS", "14")), 1)
 REQUIRED_CONFIRMATIONS = max(int(os.getenv("WAGGLE_ENROLLMENT_CONFIRMATIONS", "4")), 1)
+
+# Hive and device ids are derived from the highest one already stored, which is a read
+# followed by a write with no lock in between: two hives added in the same moment compute
+# the same id and one of them loses on the primary key. The id is the panel's to choose,
+# not the caller's, so a collision means deriving it again rather than failing the request
+# — which is what it used to do, as a bare 500 from a UNIQUE constraint.
+ID_ALLOCATION_ATTEMPTS = 25
+# The event schema names a hive with ^H[1-9][0-9]{0,2}$, so ids stop here.
+MAX_HIVE_NUMBER = 999
+
+# Only ever the seed for a brand new settings row, and the value an upgrading panel keeps.
+# After that the stored pair is the single source of truth, because it is the one a person
+# can correct from the panel. The default names the same place the default location name
+# does, so an untouched panel is at least internally consistent.
+DEFAULT_LATITUDE = float(os.getenv("WAGGLE_LAT", "39.7897"))
+DEFAULT_LONGITUDE = float(os.getenv("WAGGLE_LON", "32.8065"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS hives (
@@ -34,13 +51,19 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp TEXT NOT NULL,
     event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    anomaly_severity REAL CHECK (anomaly_severity IS NULL OR (anomaly_severity >= 0 AND anomaly_severity <= 1)),
     consecutive_anomalies INTEGER NOT NULL DEFAULT 0,
     source_file TEXT,
     alindi TEXT NOT NULL,
     acknowledged_at TEXT,
     inspection_result TEXT CHECK (inspection_result IN ('issue_confirmed', 'no_issue_found', 'uncertain')),
     inspection_note TEXT,
-    acknowledged_by TEXT
+    acknowledged_by TEXT,
+    model TEXT,
+    temperature_c REAL,
+    humidity_percent INTEGER,
+    wind_kmh REAL,
+    weather_code INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_events_hive_time ON events(hive_id, timestamp DESC);
 CREATE TABLE IF NOT EXISTS reports (
@@ -55,7 +78,8 @@ CREATE TABLE IF NOT EXISTS reports (
     grounding_sources TEXT NOT NULL DEFAULT '[]',
     report_type TEXT NOT NULL DEFAULT 'weekly' CHECK (report_type IN ('event', 'daily', 'weekly')),
     event_id INTEGER,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    assessment TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -66,7 +90,13 @@ CREATE TABLE IF NOT EXISTS settings (
     refresh_seconds INTEGER NOT NULL,
     onboarding_completed INTEGER NOT NULL DEFAULT 0,
     weather_enabled INTEGER NOT NULL DEFAULT 0,
-    language TEXT NOT NULL DEFAULT 'tr' CHECK (language IN ('tr', 'en'))
+    language TEXT NOT NULL DEFAULT 'tr' CHECK (language IN ('tr', 'en')),
+    -- Where the apiary actually is. The name beside it is a label a person types; these
+    -- are what the weather is asked about, and they were readable only from the
+    -- environment. Renaming the apiary therefore relabelled another town's weather with
+    -- it, and that reading was stamped onto every event recorded while it was on.
+    latitude REAL NOT NULL DEFAULT 39.7897,
+    longitude REAL NOT NULL DEFAULT 32.8065
 );
 CREATE TABLE IF NOT EXISTS devices (
     device_id TEXT PRIMARY KEY,
@@ -85,6 +115,7 @@ CREATE TABLE IF NOT EXISTS hive_profiles (
     model_path TEXT,
     enrollment_started_at TEXT,
     ready_at TEXT,
+    verification TEXT,
     FOREIGN KEY (hive_id) REFERENCES hives(hive_id)
 );
 CREATE TABLE IF NOT EXISTS enrollment_recordings (
@@ -136,14 +167,51 @@ REQUIRED_BACKUP_COLUMNS = {
 }
 
 
+def _optional(row: sqlite3.Row, name: str):
+    """A nullable column, tolerating a row written before the column existed."""
+    return row[name] if name in row.keys() else None
+
+
+def _decode_json(value):
+    """Read a stored JSON column, tolerating a row written before it existed."""
+    if not value:
+        return None
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _decode_assessment(row: sqlite3.Row):
+    """Read the stored assessment, tolerating rows written before the column existed."""
+    if "assessment" not in row.keys() or not row["assessment"]:
+        return None
+    try:
+        return json.loads(row["assessment"])
+    except (TypeError, ValueError):
+        return None
+
+
 class EventStore:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
+        # SQLite enforces no foreign key at all unless it is asked to, per connection. The
+        # schema has declared them since the first version and none of them were ever
+        # checked: every cleanup was a DELETE somewhere in this file, and a path that
+        # forgot one would have orphaned rows in silence.
+        connection.execute("PRAGMA foreign_keys = ON")
+        # A report run writes in a background thread while the panel is being read. Under
+        # the rollback journal a writer locks readers out for the whole transaction; WAL
+        # lets them proceed. The setting lives in the database file, so this is a no-op
+        # after the first connection ever made to it.
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA busy_timeout = 10000")
         try:
             with connection:
                 yield connection
@@ -154,25 +222,7 @@ class EventStore:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
-            columns = {row["name"] for row in connection.execute("PRAGMA table_info(events)")}
-            if "acknowledged_at" not in columns:
-                connection.execute("ALTER TABLE events ADD COLUMN acknowledged_at TEXT")
-            if "inspection_result" not in columns:
-                connection.execute("ALTER TABLE events ADD COLUMN inspection_result TEXT")
-            if "inspection_note" not in columns:
-                connection.execute("ALTER TABLE events ADD COLUMN inspection_note TEXT")
-            if "consecutive_anomalies" not in columns:
-                connection.execute(
-                    "ALTER TABLE events ADD COLUMN consecutive_anomalies INTEGER NOT NULL DEFAULT 0"
-                )
-            if "source_file" not in columns:
-                connection.execute("ALTER TABLE events ADD COLUMN source_file TEXT")
-            # Who inspected the hive is part of the audit trail behind an AI decision, and
-            # it can never be filled in retroactively — rows written before this column
-            # existed stay anonymous, which is exactly why it lands while there is still
-            # one user rather than when a second one appears.
-            if "acknowledged_by" not in columns:
-                connection.execute("ALTER TABLE events ADD COLUMN acknowledged_by TEXT")
+            self._upgrade_events_columns(connection)
             confirmation_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(health_confirmations)")
             }
@@ -180,6 +230,18 @@ class EventStore:
                 connection.execute(
                     "ALTER TABLE health_confirmations ADD COLUMN confirmed_by TEXT"
                 )
+            profile_columns = {row["name"] for row in connection.execute("PRAGMA table_info(hive_profiles)")}
+            # Training refuses to publish a profile whose ONNX decisions differ from the
+            # joblib ones, and then threw the comparison away. Keeping it is what turns
+            # "this hive is monitored" into "this hive is monitored by a model whose
+            # conversion was checked over this many windows".
+            if "verification" not in profile_columns:
+                connection.execute("ALTER TABLE hive_profiles ADD COLUMN verification TEXT")
+            report_columns = {row["name"] for row in connection.execute("PRAGMA table_info(reports)")}
+            # The model's own decision, kept so the panel can show what it concluded rather
+            # than re-deriving a verdict from the raw events.
+            if "assessment" not in report_columns:
+                connection.execute("ALTER TABLE reports ADD COLUMN assessment TEXT")
             user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
             for column in ("recovery_salt", "recovery_hash", "recovery_created_at"):
                 if column not in user_columns:
@@ -212,6 +274,17 @@ class EventStore:
                 connection.execute(
                     "ALTER TABLE settings ADD COLUMN language TEXT NOT NULL DEFAULT 'tr'"
                 )
+            # A panel upgrading from a version that read the coordinates out of the
+            # environment keeps exactly the pair it was already using, so the weather it
+            # reports does not move the day it is upgraded.
+            if "latitude" not in settings_columns:
+                connection.execute(
+                    f"ALTER TABLE settings ADD COLUMN latitude REAL NOT NULL DEFAULT {DEFAULT_LATITUDE}"
+                )
+            if "longitude" not in settings_columns:
+                connection.execute(
+                    f"ALTER TABLE settings ADD COLUMN longitude REAL NOT NULL DEFAULT {DEFAULT_LONGITUDE}"
+                )
             report_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(reports)")
             }
@@ -243,20 +316,9 @@ class EventStore:
             ).fetchone()["sql"]
             if "hive_id IN" in table_sql:
                 self._migrate_events_table(connection)
-            now = datetime.now(timezone.utc).isoformat()
-            defaults = [
-                ("H1", "Bahçe Kovanı", "Gölbaşı / Bahçe", now),
-                ("H2", "Orman Kovanı", "Gölbaşı / Orman kenarı", now),
-                ("H3", "Çayır Kovanı", "Gölbaşı / Çayır", now),
-            ]
-            connection.executemany(
-                "INSERT OR IGNORE INTO hives (hive_id, name, location, created_at) VALUES (?, ?, ?, ?)",
-                defaults,
-            )
-            connection.executemany(
-                "INSERT OR IGNORE INTO hive_profiles (hive_id, state, model_path, ready_at) VALUES (?, 'monitoring', ?, ?)",
-                [(hive_id, "results/mendeley_isolation_monitor.onnx", now) for hive_id, *_ in defaults],
-            )
+                # The rebuild writes a table of its own, so the columns added since have to
+                # be put back onto it rather than onto the one it replaced.
+                self._upgrade_events_columns(connection)
             connection.execute(
                 """INSERT OR IGNORE INTO settings
                 (id, panel_name, location_name, alarm_threshold, sound_enabled, refresh_seconds)
@@ -315,6 +377,30 @@ class EventStore:
         names = ", ".join(shared)
         connection.execute(f"INSERT INTO users ({names}) SELECT {names} FROM users_legacy")
         connection.execute("DROP TABLE users_legacy")
+
+    # Sample hives belong to a demo, not to every database that is ever opened. They used
+    # to be inserted by initialize(), which meant a beekeeper's first launch showed three
+    # hives they had never owned — and their profiles were marked "monitoring" against the
+    # generic model, so the panel claimed a trained profile where no recording existed.
+    # That is the opposite of what the enrollment thresholds promise.
+    SAMPLE_HIVES = (
+        ("H1", "Bahçe Kovanı", "Gölbaşı / Bahçe"),
+        ("H2", "Orman Kovanı", "Gölbaşı / Orman kenarı"),
+        ("H3", "Çayır Kovanı", "Gölbaşı / Çayır"),
+    )
+
+    def seed_sample_hives(self) -> None:
+        """Add the three demo hives with ready profiles. Only a demo should call this."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            connection.executemany(
+                "INSERT OR IGNORE INTO hives (hive_id, name, location, created_at) VALUES (?, ?, ?, ?)",
+                [(hive_id, name, location, now) for hive_id, name, location in self.SAMPLE_HIVES],
+            )
+            connection.executemany(
+                "INSERT OR IGNORE INTO hive_profiles (hive_id, state, model_path, ready_at) VALUES (?, 'monitoring', ?, ?)",
+                [(hive_id, "results/mendeley_isolation_monitor.onnx", now) for hive_id, *_ in self.SAMPLE_HIVES],
+            )
 
     def has_users(self, include_demo: bool = False) -> bool:
         """Whether a real owner has been registered.
@@ -453,7 +539,7 @@ class EventStore:
         with self.connect() as connection:
             row = connection.execute(
                 """SELECT username, display_name, role, active, must_change_password,
-                          demo_account
+                          demo_account, password_hash
                    FROM users WHERE username = ?""",
                 (username.strip(),),
             ).fetchone()
@@ -466,6 +552,8 @@ class EventStore:
             "active": bool(row["active"]),
             "must_change_password": bool(row["must_change_password"]),
             "demo_account": bool(row["demo_account"]),
+            # The stamp, not the hash: this dictionary is handed to request handlers.
+            "password_stamp": password_stamp(row["password_hash"]),
         }
 
     def set_user_active(self, username: str, active: bool) -> bool:
@@ -561,6 +649,48 @@ class EventStore:
         return row["display_name"], row["password_salt"], row["password_hash"]
 
     @staticmethod
+    def _upgrade_events_columns(connection: sqlite3.Connection) -> None:
+        """Bring an events table up to the current column set.
+
+        It runs in more than one place because more than one thing can leave the table
+        behind: a database from an older version, the legacy rebuild below, and a restored
+        backup taken before a column existed. Keeping the list in one method is what stops
+        those paths from drifting apart — they already had, and the symptom was an insert
+        failing on a column the schema said was there.
+        """
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(events)")}
+        additions = {
+            "acknowledged_at": "TEXT",
+            "inspection_result": "TEXT",
+            "inspection_note": "TEXT",
+            "consecutive_anomalies": "INTEGER NOT NULL DEFAULT 0",
+            "source_file": "TEXT",
+            # Who inspected the hive is part of the audit trail behind an AI decision, and
+            # it can never be filled in retroactively — rows written before this column
+            # existed stay anonymous.
+            "acknowledged_by": "TEXT",
+            # Which acoustic model decided this event. The ONNX profile is the first link
+            # in the chain a report rests on, and without it stored per event a report can
+            # name the language model that phrased it but not the one that measured it.
+            "model": "TEXT",
+            # How far outside the profile the anomalous windows sat. It stays null on rows
+            # written before the ONNX graph's score output was read, so a report has to
+            # treat its absence as "not measured" rather than as zero.
+            "anomaly_severity": "REAL",
+            # Conditions at the moment of the recording, stamped only while online weather
+            # is on. They stay null on every row written with it off and on every row that
+            # predates these columns, because the weather of a past recording cannot be
+            # recovered without asking an external service about a place and a time.
+            "temperature_c": "REAL",
+            "humidity_percent": "INTEGER",
+            "wind_kmh": "REAL",
+            "weather_code": "INTEGER",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                connection.execute(f"ALTER TABLE events ADD COLUMN {name} {declaration}")
+
+    @staticmethod
     def _migrate_events_table(connection: sqlite3.Connection) -> None:
         connection.execute("DROP INDEX IF EXISTS idx_events_hive_time")
         connection.execute("ALTER TABLE events RENAME TO events_legacy")
@@ -602,23 +732,39 @@ class EventStore:
 
     def add_hive(self, hive: HiveCreate) -> Hive:
         created_at = datetime.now(timezone.utc)
-        with self.connect() as connection:
-            # Profiles outlive a deleted hive in older databases, so the next id is taken
-            # from both tables; reusing one would collide on the profile primary key.
-            rows = connection.execute(
-                "SELECT hive_id FROM hives UNION SELECT hive_id FROM hive_profiles"
-            ).fetchall()
-            numbers = [int(row["hive_id"][1:]) for row in rows if row["hive_id"][1:].isdigit()]
-            hive_id = f"H{max(numbers, default=0) + 1}"
-            connection.execute(
-                "INSERT INTO hives (hive_id, name, location, active, created_at) VALUES (?, ?, ?, 1, ?)",
-                (hive_id, hive.name.strip(), hive.location.strip() if hive.location else None, created_at.isoformat()),
-            )
-            connection.execute(
-                "INSERT INTO hive_profiles (hive_id, state) VALUES (?, 'device_required')",
-                (hive_id,),
-            )
-        return Hive(hive_id=hive_id, name=hive.name.strip(), location=hive.location.strip() if hive.location else None, active=True, created_at=created_at)
+        name = hive.name.strip()
+        location = hive.location.strip() if hive.location else None
+        last_collision: sqlite3.IntegrityError | None = None
+        for _ in range(ID_ALLOCATION_ATTEMPTS):
+            try:
+                with self.connect() as connection:
+                    # Profiles outlive a deleted hive in older databases, so the next id is
+                    # taken from both tables; reusing one would collide on the profile
+                    # primary key.
+                    rows = connection.execute(
+                        "SELECT hive_id FROM hives UNION SELECT hive_id FROM hive_profiles"
+                    ).fetchall()
+                    numbers = [int(row["hive_id"][1:]) for row in rows if row["hive_id"][1:].isdigit()]
+                    number = max(numbers, default=0) + 1
+                    # An event names its hive with the same pattern the panel hands out, and
+                    # that pattern stops at H999. Past it a hive could be created but never
+                    # receive a recording, so the refusal belongs here rather than three
+                    # screens later on the first upload.
+                    if number > MAX_HIVE_NUMBER:
+                        raise ValueError(f"Kovan sayısı üst sınıra ulaştı (H{MAX_HIVE_NUMBER})")
+                    hive_id = f"H{number}"
+                    connection.execute(
+                        "INSERT INTO hives (hive_id, name, location, active, created_at) VALUES (?, ?, ?, 1, ?)",
+                        (hive_id, name, location, created_at.isoformat()),
+                    )
+                    connection.execute(
+                        "INSERT INTO hive_profiles (hive_id, state) VALUES (?, 'device_required')",
+                        (hive_id,),
+                    )
+                return Hive(hive_id=hive_id, name=name, location=location, active=True, created_at=created_at)
+            except sqlite3.IntegrityError as collision:
+                last_collision = collision
+        raise last_collision
 
     def devices(self, hive_id: str) -> list[Device]:
         with self.connect() as connection:
@@ -630,28 +776,35 @@ class EventStore:
 
     def add_device(self, hive_id: str, device: DeviceCreate) -> Device:
         created_at = datetime.now(timezone.utc)
-        with self.connect() as connection:
-            profile = connection.execute(
-                "SELECT state FROM hive_profiles WHERE hive_id = ?", (hive_id,)
-            ).fetchone()
-            active_devices = connection.execute(
-                "SELECT COUNT(*) FROM devices WHERE hive_id = ? AND active = 1", (hive_id,)
-            ).fetchone()[0]
-            if profile and profile["state"] == "enrolling" and active_devices:
-                raise ValueError("Öğrenme sırasında tek bir mikrofon kullanılmalıdır")
-            count = connection.execute(
-                "SELECT COUNT(*) FROM devices WHERE hive_id = ?", (hive_id,)
-            ).fetchone()[0]
-            device_id = f"{hive_id}-D{count + 1}"
-            connection.execute(
-                "INSERT INTO devices (device_id, hive_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?)",
-                (device_id, hive_id, device.name.strip(), device.kind, created_at.isoformat()),
-            )
-            connection.execute(
-                "UPDATE hive_profiles SET state = 'enrolling', enrollment_started_at = COALESCE(enrollment_started_at, ?) WHERE hive_id = ? AND state = 'device_required'",
-                (created_at.isoformat(), hive_id),
-            )
-        return Device(device_id=device_id, hive_id=hive_id, name=device.name.strip(), kind=device.kind, created_at=created_at)
+        name = device.name.strip()
+        last_collision: sqlite3.IntegrityError | None = None
+        for _ in range(ID_ALLOCATION_ATTEMPTS):
+            try:
+                with self.connect() as connection:
+                    profile = connection.execute(
+                        "SELECT state FROM hive_profiles WHERE hive_id = ?", (hive_id,)
+                    ).fetchone()
+                    active_devices = connection.execute(
+                        "SELECT COUNT(*) FROM devices WHERE hive_id = ? AND active = 1", (hive_id,)
+                    ).fetchone()[0]
+                    if profile and profile["state"] == "enrolling" and active_devices:
+                        raise ValueError("Öğrenme sırasında tek bir mikrofon kullanılmalıdır")
+                    count = connection.execute(
+                        "SELECT COUNT(*) FROM devices WHERE hive_id = ?", (hive_id,)
+                    ).fetchone()[0]
+                    device_id = f"{hive_id}-D{count + 1}"
+                    connection.execute(
+                        "INSERT INTO devices (device_id, hive_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (device_id, hive_id, name, device.kind, created_at.isoformat()),
+                    )
+                    connection.execute(
+                        "UPDATE hive_profiles SET state = 'enrolling', enrollment_started_at = COALESCE(enrollment_started_at, ?) WHERE hive_id = ? AND state = 'device_required'",
+                        (created_at.isoformat(), hive_id),
+                    )
+                return Device(device_id=device_id, hive_id=hive_id, name=name, kind=device.kind, created_at=created_at)
+            except sqlite3.IntegrityError as collision:
+                last_collision = collision
+        raise last_collision
 
     def enrollment_status(self, hive_id: str) -> EnrollmentStatus:
         with self.connect() as connection:
@@ -727,6 +880,91 @@ class EventStore:
             )
         return self.enrollment_status(hive_id)
 
+    def health_confirmations(self, limit: int = 1_000_000) -> list[dict]:
+        """Every field check, with the account that vouched for it.
+
+        These are what unlock more training data, so they belong in an export as much as
+        the events do: an assessment nobody can audit is just an opinion.
+        """
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT id, hive_id, confirmed_at, evidence, note, accepted_for_enrollment,
+                          confirmed_by
+                   FROM health_confirmations ORDER BY confirmed_at DESC, id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "hive_id": row["hive_id"],
+                "confirmed_at": row["confirmed_at"],
+                "evidence": row["evidence"],
+                "note": row["note"],
+                "accepted_for_enrollment": bool(row["accepted_for_enrollment"]),
+                "confirmed_by": row["confirmed_by"],
+            }
+            for row in rows
+        ]
+
+    def enrollment_recordings(self, limit: int = 1_000_000) -> list[dict]:
+        """One row per enrollment recording, without the extracted feature vectors.
+
+        This is the evidence behind the enrollment gate: how many recordings a hive has,
+        spread over how many distinct calendar days, and which were confirmed healthy. The
+        panel shows the resulting percentage; nothing let anyone download what it rests on.
+        The features themselves are left out because they are a long numeric blob nobody
+        reads in a spreadsheet, and the audio they came from no longer exists.
+        """
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT r.id, r.hive_id, h.name AS hive_name, r.device_id, r.recorded_at,
+                          r.filename, r.window_count, r.healthy_confirmed
+                   FROM enrollment_recordings r
+                   LEFT JOIN hives h ON h.hive_id = r.hive_id
+                   ORDER BY r.recorded_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "hive_id": row["hive_id"],
+                "hive_name": row["hive_name"] or "Bilinmeyen kovan",
+                "device_id": row["device_id"],
+                "recorded_at": row["recorded_at"],
+                # The day is what the 14-day threshold counts, so it is spelled out rather
+                # than left for the reader to slice out of the timestamp.
+                "recorded_day": (row["recorded_at"] or "")[:10],
+                "filename": row["filename"],
+                "window_count": row["window_count"],
+                "healthy_confirmed": bool(row["healthy_confirmed"]),
+            }
+            for row in rows
+        ]
+
+    def all_devices(self) -> list[dict]:
+        """Every device on every hive. Which microphone produced a recording is part of
+        reading that recording, and it was not exportable anywhere."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT d.device_id, d.hive_id, h.name AS hive_name, d.name, d.kind,
+                          d.active, d.created_at, d.last_seen_at
+                   FROM devices d LEFT JOIN hives h ON h.hive_id = d.hive_id
+                   ORDER BY d.hive_id, d.created_at""",
+            ).fetchall()
+        return [
+            {
+                "device_id": row["device_id"],
+                "hive_id": row["hive_id"],
+                "hive_name": row["hive_name"] or "Bilinmeyen kovan",
+                "name": row["name"],
+                "kind": row["kind"],
+                "active": bool(row["active"]),
+                "created_at": row["created_at"],
+                "last_seen_at": row["last_seen_at"],
+            }
+            for row in rows
+        ]
+
     def enrollment_features(self, hive_id: str):
         import numpy as np
 
@@ -743,14 +981,37 @@ class EventStore:
         matrices = [np.asarray(json.loads(row["features"]), dtype=np.float64) for row in rows]
         return np.concatenate(matrices), schemas[0]
 
-    def activate_profile(self, hive_id: str, model_path: str) -> EnrollmentStatus:
+    def activate_profile(self, hive_id: str, model_path: str, verification: dict | None = None) -> EnrollmentStatus:
         now = datetime.now(timezone.utc).isoformat()
         with self.connect() as connection:
             connection.execute(
-                "UPDATE hive_profiles SET state = 'monitoring', model_path = ?, ready_at = ? WHERE hive_id = ?",
-                (model_path, now, hive_id),
+                """UPDATE hive_profiles
+                SET state = 'monitoring', model_path = ?, ready_at = ?, verification = ?
+                WHERE hive_id = ?""",
+                (model_path, now, json.dumps(verification, ensure_ascii=False) if verification else None, hive_id),
             )
         return self.enrollment_status(hive_id)
+
+    def monitoring_profiles(self) -> list[dict]:
+        """The hives being watched by their own trained profile.
+
+        The panel claims a hive is monitored; whether the file behind that claim is still
+        on disk, and whether its ONNX conversion was ever checked against the joblib model
+        it came from, are different questions and nothing was asking either.
+        """
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT hive_id, model_path, verification FROM hive_profiles
+                WHERE state = 'monitoring' AND model_path IS NOT NULL"""
+            ).fetchall()
+        return [
+            {
+                "hive_id": row["hive_id"],
+                "model_path": row["model_path"],
+                "verification": _decode_json(row["verification"] if "verification" in row.keys() else None),
+            }
+            for row in rows
+        ]
 
     def touch_device(self, device_id: str) -> None:
         with self.connect() as connection:
@@ -800,16 +1061,27 @@ class EventStore:
         if footprint is None:
             return None
         with self.connect() as connection:
+            # The trained profile is a file on disk that the row only points at, so the
+            # path is read before the row goes: deleting the row first would leave the
+            # model behind with nothing left to say whose it was.
+            profile = connection.execute(
+                "SELECT model_path FROM hive_profiles WHERE hive_id = ?", (hive_id,)
+            ).fetchone()
+            model_path = (profile["model_path"] or "").strip() if profile else ""
             connection.execute("DELETE FROM events WHERE hive_id = ?", (hive_id,))
+            # Enrollment recordings name the device that made them, so they have to go
+            # before it does. The order used to be the other way round, and nothing said
+            # so while foreign keys were unenforced: the delete simply left every
+            # recording pointing at a device that no longer existed. Turning enforcement
+            # on turned that silence into the error it always was.
+            connection.execute("DELETE FROM enrollment_recordings WHERE hive_id = ?", (hive_id,))
             connection.execute("DELETE FROM devices WHERE hive_id = ?", (hive_id,))
             connection.execute("DELETE FROM health_confirmations WHERE hive_id = ?", (hive_id,))
-            # The learning profile and its recordings are keyed by hive_id too. Leaving
-            # them behind orphans a primary key, and the next hive that reuses the id
-            # fails to insert its profile.
-            connection.execute("DELETE FROM enrollment_recordings WHERE hive_id = ?", (hive_id,))
+            # The learning profile is keyed by hive_id too. Leaving it behind orphans a
+            # primary key, and the next hive that reuses the id fails to insert its profile.
             connection.execute("DELETE FROM hive_profiles WHERE hive_id = ?", (hive_id,))
             connection.execute("DELETE FROM hives WHERE hive_id = ?", (hive_id,))
-        return {"events": footprint["events"], "devices": footprint["devices"]}
+        return {"events": footprint["events"], "devices": footprint["devices"], "model_path": model_path}
 
     def backup_to(self, destination: str | Path) -> Path:
         destination_path = Path(destination)
@@ -856,6 +1128,10 @@ class EventStore:
                 backup.backup(destination)
         finally:
             backup.close()
+        # The copy replaces the live schema with the backup's, which may predate a column
+        # the panel now writes. Without this the restore looks successful and the next
+        # recording fails on a column the code is certain exists.
+        self.initialize()
 
     def diagnostics(self) -> dict[str, object]:
         """Return lightweight, read-only database and integration metrics."""
@@ -884,20 +1160,32 @@ class EventStore:
         with self.connect() as connection:
             cursor = connection.execute(
                 """INSERT INTO events
-                (hive_id, timestamp, event, confidence, consecutive_anomalies,
-                 source_file, alindi) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (hive_id, timestamp, event, confidence, anomaly_severity, consecutive_anomalies,
+                 source_file, alindi, model, temperature_c, humidity_percent, wind_kmh, weather_code)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     event.hive_id,
                     event.timestamp.isoformat(),
                     legacy_event,
                     event.anomaly_fraction,
+                    event.anomaly_severity,
                     event.consecutive_anomalies,
                     event.source_file,
                     received_at.isoformat(),
+                    event.model,
+                    event.temperature_c,
+                    event.humidity_percent,
+                    event.wind_kmh,
+                    event.weather_code,
                 ),
             )
             event_id = cursor.lastrowid
         return HiveEvent(id=event_id, alindi=received_at, **event.model_dump())
+
+    def event(self, event_id: int) -> HiveEvent | None:
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        return self._event(row) if row else None
 
     def recent(self, limit: int = 50) -> list[HiveEvent]:
         with self.connect() as connection:
@@ -905,6 +1193,22 @@ class EventStore:
                 "SELECT * FROM events ORDER BY timestamp DESC, id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [self._event(row) for row in rows]
+
+    def latest_event(self, hive_id: str) -> HiveEvent | None:
+        """This hive's most recent event, however long ago the last one was.
+
+        The run of consecutive anomalies behind WATCH and ALARM is carried forward from
+        it, and it used to be looked up by scanning the newest few hundred events across
+        every hive. A quiet hive in a busy apiary fell out of that window, its run silently
+        restarted at zero, and the escalation the whole system rests on began again — the
+        one lookup where "recent enough" is not the question being asked.
+        """
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM events WHERE hive_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1",
+                (hive_id,),
+            ).fetchone()
+        return self._event(row) if row else None
 
     def acknowledge(
         self,
@@ -987,20 +1291,27 @@ class EventStore:
             "onboarding_completed": bool(row["onboarding_completed"]),
             "weather_enabled": bool(row["weather_enabled"]),
             "language": row["language"],
+            "latitude": _optional(row, "latitude") if _optional(row, "latitude") is not None else DEFAULT_LATITUDE,
+            "longitude": _optional(row, "longitude") if _optional(row, "longitude") is not None else DEFAULT_LONGITUDE,
         }
 
     def update_settings(self, values: dict[str, object]) -> dict[str, object]:
+        current = self.settings()
         with self.connect() as connection:
             connection.execute(
                 """UPDATE settings SET panel_name = ?, location_name = ?, alarm_threshold = ?,
                 sound_enabled = ?, refresh_seconds = ?, onboarding_completed = ?,
-                weather_enabled = ?, language = ? WHERE id = 1""",
+                weather_enabled = ?, language = ?, latitude = ?, longitude = ? WHERE id = 1""",
                 (
                     values["panel_name"], values["location_name"], values["alarm_threshold"],
                     int(bool(values["sound_enabled"])), values["refresh_seconds"],
                     int(bool(values["onboarding_completed"])),
                     int(bool(values["weather_enabled"])),
                     values.get("language", "tr"),
+                    # A caller that does not mention the coordinates keeps the stored pair,
+                    # rather than being read as asking for the defaults back.
+                    float(values.get("latitude", current["latitude"])),
+                    float(values.get("longitude", current["longitude"])),
                 ),
             )
         return self.settings()
@@ -1011,8 +1322,9 @@ class EventStore:
             cursor = connection.execute(
                 """INSERT INTO reports
                 (period_start, period_end, summary, recommendations, hive_ids,
-                 language, generator, grounding_sources, report_type, event_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 language, generator, grounding_sources, report_type, event_id, created_at,
+                 assessment)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     report.period_start.isoformat(),
                     report.period_end.isoformat(),
@@ -1025,6 +1337,7 @@ class EventStore:
                     report.report_type,
                     report.event_id,
                     created_at.isoformat(),
+                    json.dumps(report.assessment.model_dump(), ensure_ascii=False) if report.assessment else None,
                 ),
             )
             report_id = cursor.lastrowid
@@ -1048,6 +1361,7 @@ class EventStore:
                 grounding_sources=json.loads(row["grounding_sources"]) if "grounding_sources" in row.keys() else [],
                 report_type=row["report_type"] if "report_type" in row.keys() else "weekly",
                 event_id=row["event_id"] if "event_id" in row.keys() else None,
+                assessment=_decode_assessment(row),
                 created_at=datetime.fromisoformat(row["created_at"]),
             )
             for row in rows
@@ -1067,6 +1381,7 @@ class EventStore:
             grounding_sources=json.loads(row["grounding_sources"]) if "grounding_sources" in row.keys() else [],
             report_type=row["report_type"] if "report_type" in row.keys() else "weekly",
             event_id=row["event_id"] if "event_id" in row.keys() else None,
+            assessment=_decode_assessment(row),
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
@@ -1102,11 +1417,21 @@ class EventStore:
             timestamp=datetime.fromisoformat(row["timestamp"]),
             status=status,
             anomaly_fraction=row["confidence"],
+            anomaly_severity=(
+                row["anomaly_severity"]
+                if "anomaly_severity" in row.keys() and row["anomaly_severity"] is not None
+                else None
+            ),
             consecutive_anomalies=(
                 row["consecutive_anomalies"]
                 if "consecutive_anomalies" in row.keys() else 0
             ),
             source_file=(row["source_file"] if "source_file" in row.keys() else None),
+            model=(row["model"] if "model" in row.keys() and row["model"] else None),
+            temperature_c=_optional(row, "temperature_c"),
+            humidity_percent=_optional(row, "humidity_percent"),
+            wind_kmh=_optional(row, "wind_kmh"),
+            weather_code=_optional(row, "weather_code"),
             alindi=datetime.fromisoformat(row["alindi"]),
             acknowledged_at=(
                 datetime.fromisoformat(row["acknowledged_at"])

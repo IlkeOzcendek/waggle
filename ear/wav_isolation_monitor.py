@@ -23,9 +23,9 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/waggle_matplotlib")
 
 from pyAudioAnalysis import ShortTermFeatures  # noqa: E402
 try:  # supports both `python ear/...` and package imports in tests
-    from .model_runtime import anomaly_flags, load_monitor  # type: ignore
+    from .model_runtime import load_monitor, severity_profile, window_decisions  # type: ignore
 except ImportError:
-    from model_runtime import anomaly_flags, load_monitor  # noqa: E402
+    from model_runtime import load_monitor, severity_profile, window_decisions  # noqa: E402
 
 def arguments(): # It retrieves the necessary information from the terminal to analyze a single WAV file using the trained model
     parser = argparse.ArgumentParser(description = __doc__)
@@ -137,7 +137,7 @@ def analyze_wav(model_path, wav_path, initial_run=0):
     values, names = wav_features(wav_path)
     if names != artifact["feature_columns"]:
         raise ValueError("Feature schema does not match the monitor artifact")
-    flags = anomaly_flags(artifact, values)
+    flags, scores = window_decisions(artifact, values)
     combined = np.concatenate((np.ones(initial_run, dtype=bool), flags))
     watch_completion = first_completion(combined, artifact["watch_windows"])
     alarm_completion = first_completion(combined, artifact["alarm_windows"])
@@ -150,6 +150,10 @@ def analyze_wav(model_path, wav_path, initial_run=0):
         "status": status,
         "windows": len(flags),
         "anomaly_fraction": float(flags.mean()),
+        # How often it deviated is anomaly_fraction; how far it deviated is this. A hive
+        # that crosses the boundary in every window but barely reads very differently from
+        # one that crosses it rarely and deeply, and the ratio alone cannot separate them.
+        **severity_profile(artifact, scores),
         "initial_consecutive_anomalies": initial_run,
         "consecutive_anomalies": min(final_run, artifact["alarm_windows"]),
         "maximum_consecutive_anomalies": maximum_run,
@@ -178,6 +182,9 @@ def main():
 
     print(f"windows = {result['windows']}")
     print(f"anomaly_fraction = {result['anomaly_fraction']:.4f}")
+    if result["anomaly_severity"] is not None:
+        print(f"anomaly_severity = {result['anomaly_severity']:.4f}")
+        print(f"peak_severity = {result['peak_severity']:.4f}")
     print(f"initial_consecutive_anomalies = {initial_run}")
     print(f"final_consecutive_anomalies = {result['consecutive_anomalies']}")
     print(f"maximum_consecutive_anomalies = {result['maximum_consecutive_anomalies']}")

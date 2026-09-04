@@ -158,7 +158,7 @@ class WorkerAccountTest(unittest.TestCase):
         """Otherwise the team screen is hidden in exactly the mode it would be shown in."""
         with patch.object(main, "DEMO_MODE", True):
             with TestClient(main.app) as demo:
-                demo.cookies.set(main.COOKIE_NAME, main.create_session(main.ADMIN_USERNAME))
+                demo.cookies.set(main.COOKIE_NAME, main.create_session(main.ADMIN_USERNAME, stamp=main._stamp_for(main.ADMIN_USERNAME)))
                 me = demo.get("/api/me").json()
                 self.assertTrue(me["manages_accounts"])
                 self.assertEqual(me["role"], "owner")
@@ -224,3 +224,101 @@ class WorkerAccountTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionInvalidationTest(unittest.TestCase):
+    """Changing a password has to end the sessions opened with the old one.
+
+    Sessions are signed tokens with no server-side record, so "sign out everywhere" cannot
+    be done by deleting rows. The token carries a marker of the password it was minted
+    with instead, and a request whose marker no longer matches is refused.
+    """
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.store = EventStore(Path(self.tempdir.name) / "sessions.db")
+        self.store.initialize()
+        self.store_patch = patch.object(main, "store", self.store)
+        self.demo_patch = patch.object(main, "DEMO_MODE", False)
+        self.store_patch.start()
+        self.demo_patch.start()
+        self.owner = TestClient(main.app)
+        self.owner.post(
+            "/api/setup",
+            json={"display_name": "İlke", "username": "ilke", "password": "guclu-parola-123"},
+        )
+
+    def tearDown(self):
+        self.owner.close()
+        self.demo_patch.stop()
+        self.store_patch.stop()
+        self.tempdir.cleanup()
+
+    def _second_device(self, username: str, password: str) -> TestClient:
+        """The same account signed in somewhere else — a phone, a borrowed laptop."""
+        client = TestClient(main.app)
+        self.assertEqual(
+            client.post("/api/login", json={"username": username, "password": password}).status_code,
+            200,
+        )
+        self.assertEqual(client.get("/api/me").status_code, 200)
+        return client
+
+    def test_changing_your_password_ends_your_other_sessions(self):
+        phone = self._second_device("ilke", "guclu-parola-123")
+        self.owner.post(
+            "/api/password",
+            json={"current_password": "guclu-parola-123", "new_password": "yeni-parola-456"},
+        )
+        self.assertEqual(phone.get("/api/me").status_code, 401)
+        phone.close()
+
+    def test_but_not_the_session_you_changed_it_from(self):
+        """Otherwise choosing a password would throw you out onto the sign-in screen."""
+        self.owner.post(
+            "/api/password",
+            json={"current_password": "guclu-parola-123", "new_password": "yeni-parola-456"},
+        )
+        self.assertEqual(self.owner.get("/api/me").status_code, 200)
+
+    def test_the_new_password_signs_in_normally_afterwards(self):
+        self.owner.post(
+            "/api/password",
+            json={"current_password": "guclu-parola-123", "new_password": "yeni-parola-456"},
+        )
+        again = self._second_device("ilke", "yeni-parola-456")
+        again.close()
+
+    def test_a_reset_the_owner_issues_ends_the_worker_open_session(self):
+        """The reason to reset a worker's password is usually that it is not private any more."""
+        self.owner.post(
+            "/api/users",
+            json={"display_name": "Ayşe Saha", "username": "ayse", "password": "gecici-parola-123"},
+        )
+        worker = self._second_device("ayse", "gecici-parola-123")
+        self.owner.post("/api/users/ayse/password", json={"password": "yeni-gecici-789"})
+        self.assertEqual(worker.get("/api/me").status_code, 401)
+        worker.close()
+
+    def test_resetting_a_worker_leaves_the_owner_signed_in(self):
+        self.owner.post(
+            "/api/users",
+            json={"display_name": "Ayşe Saha", "username": "ayse", "password": "gecici-parola-123"},
+        )
+        self.owner.post("/api/users/ayse/password", json={"password": "yeni-gecici-789"})
+        self.assertEqual(self.owner.get("/api/me").status_code, 200)
+
+    def test_recovering_a_password_ends_the_sessions_too(self):
+        """Recovery exists for a lost machine; leaving its session open would defeat it."""
+        lost_laptop = self._second_device("ilke", "guclu-parola-123")
+        code = self.owner.post("/api/recovery-code").json()["code"]
+        stranger = TestClient(main.app)
+        self.assertEqual(
+            stranger.post("/api/password-recovery", json={
+                "username": "ilke", "recovery_code": code, "new_password": "kurtarilan-parola-1",
+            }).status_code,
+            204,
+        )
+        self.assertEqual(lost_laptop.get("/api/me").status_code, 401)
+        lost_laptop.close()
+        stranger.close()

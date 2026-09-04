@@ -1,6 +1,10 @@
 [
   {
     "id": "alarm-interpretation",
+    "title": {
+      "tr": "Kalıcı ses değişimi ne anlatır",
+      "en": "What a lasting sound change means"
+    },
     "tags": [
       "ALARM",
       "persistent_acoustic_change",
@@ -17,6 +21,10 @@
   },
   {
     "id": "alarm-inspection",
+    "title": {
+      "tr": "Alarmdan sonra kovanı açmak",
+      "en": "Opening the hive after an alarm"
+    },
     "tags": [
       "ALARM",
       "inspect_hive",
@@ -32,14 +40,18 @@
   },
   {
     "id": "alarm-sustained-run",
+    "title": {
+      "tr": "Kesintisiz süren farklılık",
+      "en": "A difference that does not let up"
+    },
     "tags": [
       "ALARM",
       "consecutive_anomalies",
       "sustained",
       "priority"
     ],
-    "tr": "Aykırı pencereler arka arkaya uzun sürüyorsa değişim anlık bir gürültü değil, kalıcı bir durumdur; kontrolü öne alın.",
-    "en": "A long unbroken run of anomalous windows means the change is a lasting condition rather than passing noise; bring the inspection forward.",
+    "tr": "Ses uzun süre kesintisiz farklı kaldıysa bu geçip giden bir gürültü değil, süren bir durumdur; kontrolü öne alın.",
+    "en": "When the sound stays different without a break for a long stretch, it is a lasting condition rather than passing noise; bring the inspection forward.",
     "conditions": {
       "status": [
         "ALARM"
@@ -49,13 +61,17 @@
   },
   {
     "id": "alarm-very-high-fraction",
+    "title": {
+      "tr": "Kaydın tamamı farklı çıktığında",
+      "en": "When the whole recording sounds different"
+    },
     "tags": [
       "ALARM",
       "anomaly_fraction",
       "dominant"
     ],
-    "tr": "Kayıtların büyük bölümü aykırı çıkıyorsa ses profili tümüyle değişmiş demektir; mikrofon konumunu da doğrulayın.",
-    "en": "When most windows are anomalous the acoustic profile has shifted wholesale; verify the microphone position as well as the colony.",
+    "tr": "Kaydın neredeyse tamamı farklı çıkıyorsa olağan ses tümüyle değişmiş demektir; koloni kadar mikrofonun yerini de kontrol edin.",
+    "en": "When nearly all of the recording sounds different, the usual sound has shifted wholesale; check the microphone position as well as the colony.",
     "conditions": {
       "status": [
         "ALARM"
@@ -65,6 +81,10 @@
   },
   {
     "id": "queenless-signs",
+    "title": {
+      "tr": "Kraliçesizliğin çerçevedeki işaretleri",
+      "en": "Signs of queenlessness on the frame"
+    },
     "tags": [
       "ALARM",
       "queen_loss",
@@ -82,6 +102,10 @@
   },
   {
     "id": "queen-replacement",
+    "title": {
+      "tr": "Kraliçe kaybı doğrulandıktan sonra",
+      "en": "Once queenlessness is confirmed"
+    },
     "tags": [
       "ALARM",
       "queen_loss",
@@ -98,6 +122,10 @@
   },
   {
     "id": "watch-follow-up",
+    "title": {
+      "tr": "İzlemedeki kovanı ikinci kayıtla sınamak",
+      "en": "Testing a watched hive with a second recording"
+    },
     "tags": [
       "WATCH",
       "developing_acoustic_change",
@@ -114,6 +142,10 @@
   },
   {
     "id": "watch-timing",
+    "title": {
+      "tr": "Kayıtları karşılaştırılabilir tutmak",
+      "en": "Keeping recordings comparable"
+    },
     "tags": [
       "WATCH",
       "recording_time",
@@ -131,13 +163,17 @@
   },
   {
     "id": "watch-short-run",
+    "title": {
+      "tr": "Kısa ve dağınık farklılıklar",
+      "en": "Short, scattered moments of difference"
+    },
     "tags": [
       "WATCH",
       "consecutive_anomalies",
       "transient"
     ],
-    "tr": "Aykırı pencereler kısa ve dağınıksa geçici bir dış etken olabilir; kovanı açmadan önce bir kayıt daha alın.",
-    "en": "Short, scattered anomalous runs can be a passing external cause; take another recording before opening the hive.",
+    "tr": "Farklılık kısa kısa ve dağınık görülüyorsa geçici bir dış etken olabilir; kovanı açmadan önce bir kayıt daha alın.",
+    "en": "Short, scattered moments of difference can have a passing outside cause; take another recording before opening the hive.",
     "conditions": {
       "status": [
         "WATCH"
@@ -147,6 +183,10 @@
   },
   {
     "id": "normal-baseline",
+    "title": {
+      "tr": "Normal kayıtlar profili güçlendirir",
+      "en": "Normal recordings strengthen the profile"
+    },
     "tags": [
       "NORMAL",
       "baseline",
@@ -162,6 +202,10 @@
   },
   {
     "id": "normal-profile-drift",
+    "title": {
+      "tr": "Koloni büyürken sesin kayması",
+      "en": "How a growing colony's sound drifts"
+    },
     "tags": [
       "NORMAL",
       "baseline",
@@ -178,6 +222,10 @@
   },
   {
     "id": "field-verification",
+    "title": {
+      "tr": "Saha kontrolü neye dayanmalı",
+      "en": "What a field check should rest on"
+    },
     "tags": [
       "baseline",
       "health_confirmation",
@@ -189,6 +237,10 @@
   },
   {
     "id": "field-uncertainty",
+    "title": {
+      "tr": "Emin değilken ne işaretlenmeli",
+      "en": "What to mark when you are unsure"
+    },
     "tags": [
       "health_confirmation",
       "uncertain",
@@ -199,11 +251,16 @@
   },
   {
     "id": "season-spring-swarm",
+    "title": {
+      "tr": "İlkbaharda oğul hazırlığı",
+      "en": "Swarm preparation in spring"
+    },
     "tags": [
       "swarming",
       "spring",
       "queen_cells",
-      "seasonal"
+      "seasonal",
+      "oğul"
     ],
     "tr": "İlkbaharda ses değişiminin sık görülen sebebi oğul hazırlığıdır; çerçevelerde ana arı beyi (oğul gözü) arayın.",
     "en": "In spring a common cause of sound change is swarm preparation; look for queen cells on the frames.",
@@ -218,11 +275,17 @@
   },
   {
     "id": "season-summer-robbing",
+    "title": {
+      "tr": "Yaz kuraklığında yağmacılık",
+      "en": "Robbing in the summer dearth"
+    },
     "tags": [
       "robbing",
       "summer",
       "dearth",
-      "seasonal"
+      "seasonal",
+      "yağmacılık",
+      "hırsızlık"
     ],
     "tr": "Nektar akımının kesildiği sıcak dönemde yağmacılık sesi yükseltir; uçuş deliğini daraltın ve kovan önünü gözleyin.",
     "en": "In hot dearth periods robbing raises the sound level; reduce the entrance and watch the hive front.",
@@ -235,12 +298,17 @@
   },
   {
     "id": "season-autumn-varroa",
+    "title": {
+      "tr": "Sonbaharda varroa yükü",
+      "en": "The varroa load in autumn"
+    },
     "tags": [
       "varroa",
       "autumn",
       "mite",
       "treatment",
-      "seasonal"
+      "seasonal",
+      "akar"
     ],
     "tr": "Sonbaharda varroa yükü kolonide huzursuzluk ve ses değişimi yapabilir; kışlatma öncesi sayım ve tedavi planlayın.",
     "en": "In autumn a varroa load can unsettle the colony and change its sound; count and plan treatment before wintering.",
@@ -254,6 +322,10 @@
   },
   {
     "id": "season-winter-cluster",
+    "title": {
+      "tr": "Kış kümesinin sesi",
+      "en": "The sound of the winter cluster"
+    },
     "tags": [
       "winter",
       "cluster",
@@ -273,18 +345,30 @@
   },
   {
     "id": "false-alarm-weather",
+    "title": {
+      "tr": "Rüzgâr ve yağmur kaydı bozar",
+      "en": "Wind and rain spoil a recording"
+    },
     "tags": [
       "method",
       "weather",
       "wind",
       "rain",
-      "false_positive"
+      "false_positive",
+      "rüzgar"
     ],
     "tr": "Rüzgâr, yağmur ve yakın makine gürültüsü kaydı bozar; böyle koşullarda alınan kayıtları tekrarlayın.",
-    "en": "Wind, rain and nearby machinery corrupt a recording; repeat any recording taken in those conditions."
+    "en": "Wind, rain and nearby machinery corrupt a recording; repeat any recording taken in those conditions.",
+    "conditions": {
+      "adverse_recording": true
+    }
   },
   {
     "id": "false-alarm-microphone",
+    "title": {
+      "tr": "Mikrofonun yeri değiştiğinde",
+      "en": "When the microphone has moved"
+    },
     "tags": [
       "method",
       "microphone",
@@ -296,6 +380,10 @@
   },
   {
     "id": "false-alarm-recent-intervention",
+    "title": {
+      "tr": "Kovana yeni müdahale edildiyse",
+      "en": "After a recent intervention"
+    },
     "tags": [
       "method",
       "intervention",
@@ -306,28 +394,42 @@
   },
   {
     "id": "colony-moisture",
+    "title": {
+      "tr": "Kovan içi nem ve havalandırma",
+      "en": "Damp and ventilation inside the hive"
+    },
     "tags": [
       "moisture",
       "ventilation",
       "winter",
-      "condensation"
+      "condensation",
+      "rutubet"
     ],
     "tr": "Kovan içi nem ve yetersiz havalandırma kanat sesini ve koloni davranışını değiştirir; kapak altını ve tabanı kontrol edin.",
     "en": "Damp and poor ventilation change wing sound and colony behaviour; check under the cover and at the floor."
   },
   {
     "id": "colony-starvation",
+    "title": {
+      "tr": "Yem yetersizliği",
+      "en": "Running short of stores"
+    },
     "tags": [
       "stores",
       "starvation",
       "feeding",
-      "weak_colony"
+      "weak_colony",
+      "açlık"
     ],
     "tr": "Yem yetersizliğinde koloni sesi zayıflar ve düzensizleşir; çerçeve ağırlığını kontrol edip gerekirse besleme yapın.",
     "en": "When stores run low the colony sound weakens and becomes irregular; check frame weight and feed if needed."
   },
   {
     "id": "colony-strength",
+    "title": {
+      "tr": "Zayıf koloniyi güçlendirmek",
+      "en": "Strengthening a weak colony"
+    },
     "tags": [
       "weak_colony",
       "population",
@@ -338,6 +440,10 @@
   },
   {
     "id": "colony-drone-laying",
+    "title": {
+      "tr": "Yalancı ana belirtileri",
+      "en": "Signs of a laying worker"
+    },
     "tags": [
       "laying_worker",
       "drone",
@@ -354,6 +460,10 @@
   },
   {
     "id": "method-recording-length",
+    "title": {
+      "tr": "Kayıt ne kadar uzun olmalı",
+      "en": "How long a recording should be"
+    },
     "tags": [
       "method",
       "recording",
@@ -364,6 +474,10 @@
   },
   {
     "id": "method-one-microphone",
+    "title": {
+      "tr": "Her kovana kendi mikrofonu",
+      "en": "One microphone per hive"
+    },
     "tags": [
       "method",
       "microphone",
@@ -375,6 +489,10 @@
   },
   {
     "id": "limits-not-diagnosis",
+    "title": {
+      "tr": "Waggle tanı koymaz",
+      "en": "Waggle does not diagnose"
+    },
     "tags": [
       "limits",
       "diagnosis",
@@ -385,6 +503,10 @@
   },
   {
     "id": "limits-multiple-hives",
+    "title": {
+      "tr": "Aynı anda birden fazla kovan değişirse",
+      "en": "When several hives change at once"
+    },
     "tags": [
       "limits",
       "multiple_hives",

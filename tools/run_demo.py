@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import signal
 import socket
 import subprocess
@@ -39,19 +40,26 @@ def wait_for_server(base_url: str, process: subprocess.Popen, timeout: int = 20)
 def seed_demo(base_url: str, device_key: str, include_report: bool = True) -> None:
     headers = {"X-Device-Key": device_key}
     now = datetime.now(timezone.utc).replace(microsecond=0)
+    # The severities are the ones the packaged profile produces on the published
+    # recording: about .05 across a healthy stretch and about .37 across the queen-loss
+    # stretch. They are what makes H2 and H3 differ by more than how often they deviated.
     scenarios = [
-        ("H1", "NORMAL", .08, 0),
-        ("H2", "WATCH", .66, 5),
-        ("H3", "ALARM", 1.0, 30),
+        ("H1", "NORMAL", .08, .05, 0),
+        ("H2", "WATCH", .66, .19, 5),
+        ("H3", "ALARM", 1.0, .37, 30),
     ]
-    for hive_id, status, anomaly_fraction, consecutive_anomalies in scenarios:
+    for hive_id, status, anomaly_fraction, anomaly_severity, consecutive_anomalies in scenarios:
         payload = {
             "hive_id": hive_id,
             "timestamp": now.isoformat(),
             "status": status,
             "anomaly_fraction": anomaly_fraction,
+            "anomaly_severity": anomaly_severity,
             "consecutive_anomalies": consecutive_anomalies,
             "source_file": f"phone:{hive_id.lower()}-{now:%Y%m%d-%H%M}.wav",
+            # The demo stands in for a recording analysed by the packaged profile, so
+            # the event names it the same way a real one would.
+            "model": "mendeley_isolation_monitor.onnx",
         }
         response = requests.post(
             f"{base_url}/api/events", json=payload, headers=headers, timeout=5
@@ -78,6 +86,9 @@ def seed_demo(base_url: str, device_key: str, include_report: bool = True) -> No
         f"{base_url}/api/reports", json=report, headers=headers, timeout=5
     )
     response.raise_for_status()
+
+
+DEMO_DATABASE = Path(__file__).resolve().parent.parent / "panel" / "data" / "demo.db"
 
 
 def main() -> int:
@@ -111,6 +122,9 @@ def main() -> int:
     ]
     demo_environment = os.environ.copy()
     demo_environment["WAGGLE_DEMO_MODE"] = "1"
+    # The demo writes sample hives, events and reports. Keeping them in their own file is
+    # what stops a rehearsal from ending up mixed into the beekeeper's real hive history.
+    demo_environment.setdefault("WAGGLE_DB", str(DEMO_DATABASE))
     process = subprocess.Popen(command, env=demo_environment)
     try:
         wait_for_server(base_url, process)

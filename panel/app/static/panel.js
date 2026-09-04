@@ -1,9 +1,24 @@
+// A session can end while the panel is open: the password was changed on another device,
+// or the owner deactivated this worker. The server answers 401, and every caller would
+// otherwise show its own confusing failure. Sending the browser to the sign-in screen once
+// is the honest response, and it must happen only once no matter how many calls fail.
+const nativeFetch = window.fetch.bind(window);
+let signedOut = false;
+window.fetch = async (...args) => {
+  const response = await nativeFetch(...args);
+  const url = typeof args[0] === "string" ? args[0] : args[0]?.url ?? "";
+  if (response.status === 401 && url.startsWith("/api/") && !url.startsWith("/api/login") && !signedOut) {
+    signedOut = true;
+    window.location.replace("/login");
+  }
+  return response;
+};
+
 const hivesEl = document.querySelector("#hives");
 const eventsEl = document.querySelector("#events");
 const updatedEl = document.querySelector("#updated");
 const alertEl = document.querySelector("#alert");
 const soundButton = document.querySelector("#sound-toggle");
-const demoButton = document.querySelector("#demo-button");
 const eventFilter = document.querySelector("#event-filter");
 const reportSelect = document.querySelector("#report-select");
 const reportPickerButton = document.querySelector("#report-picker-button");
@@ -26,7 +41,7 @@ let soundEnabled = true;
 let refreshSeconds = 5;
 let refreshTimer = null;
 let currentSettings = null;
-let lastCriticalId = null;
+let lastCriticalId;  // undefined until the first dashboard arrives; see refresh()
 let latestEvents = [];
 let reportEvents = [];
 let latestReports = [];
@@ -60,6 +75,16 @@ let mediaRecorder = null;
 let liveMeter = null;
 let alarmEvents = [];
 const collapsedAlarmHives = new Set();
+// Older alarms on a hive collapse to a row; these are the ones a person opened back up.
+const expandedAlarms = new Set();
+// The alarm closed a moment ago, held open long enough to show what was recorded before
+// it joins the rows below. Closing one is the end of a job, and a row appearing in its
+// place with no acknowledgement reads as the click having gone nowhere.
+let justResolvedAlarm = "";
+let justResolvedTimer = 0;
+// Long enough to read what was recorded, short enough not to be waited on.
+const JUST_RESOLVED_MS = 3200;
+const ALARM_SETTLE_MS = 420;
 let selectedHiveId = null;
 let editingHiveId = null;
 let currentLanguage = "tr";
@@ -86,8 +111,7 @@ const english = {
   "Kovan dikkat istiyor": "Hive needs attention", "Kalıcı akustik değişim algılandı. Fiziksel kontrol önerilir.": "Persistent acoustic change detected. A physical inspection is recommended.", "Olayı incele": "Review event",
   "Ses profili sağlıklı referans aralığında.": "Sound profile is within the healthy reference range.", "Değişimin kalıcılık süresi takip ediliyor.": "The duration of the change is being monitored.",
   "Kalıcı değişim algılandı; fiziksel kontrol önerilir.": "Persistent change detected; a physical inspection is recommended.", "İlk akustik veri bekleniyor.": "Waiting for the first acoustic event.",
-  "Veri bekleniyor…": "Waiting for data…", "Demo senaryosunu başlat": "Start demo scenario",
-  "Toplam kovan": "Total hives", "Normal": "Normal", "Uyarı": "Watch", "Kritik": "Critical", "Veri yok": "No data",
+  "Veri bekleniyor…": "Waiting for data…", "Toplam kovan": "Total hives", "Normal": "Normal", "Uyarı": "Watch", "Kritik": "Critical", "Veri yok": "No data",
   "Detaylarını görmek istediğiniz kovanı seçin.": "Select a hive to view its details.",
   "SAHA BAĞLAMI": "FIELD CONTEXT", "Hava durumu": "Weather", "Yükleniyor…": "Loading…",
   "Tüm kovanlara dön": "Back to all hives", "KOVAN DETAYI": "HIVE DETAIL", "Kovan": "Hive",
@@ -95,15 +119,45 @@ const english = {
   "TELEMETRİ": "TELEMETRY", "Son olaylar": "Recent events", "Durum": "Status", "Tümü": "All",
   "İzle": "Watch", "Alarm": "Alarm", "Sesli alarm: açık": "Audible alarm: on", "Sesli alarm: kapalı": "Audible alarm: off",
   "Zaman": "Time", "Aykırı ses": "Anomalous audio", "İşlem": "Action", "Henüz olay yok.": "No events yet.",
+  // Two percentages sit side by side in the same row, so the header carries the sentence
+  // that says which question each of them answers.
+  "Sapma şiddeti": "Severity",
+  "Çalıştığı birim": "Running on", "Şu ana kadar yazılan": "Written so far", "karakter": "characters",
+  "Sapma şiddeti, sesin normal aralığın ne kadar dışına çıktığını gösterir; aykırı ses oranı ise kaydın ne kadarının dışarıda kaldığını.": "Severity is how far the sound moved outside its normal range; the anomalous-audio ratio is how much of the recording fell outside it.",
   "YAPAY ZEKÂ RAPORU": "AI REPORT", "HAFTALIK KOVAN RAPORU": "WEEKLY HIVE REPORT", "Haftalık değerlendirmeler": "Weekly assessments",
   "KOVAN RAPORLARI": "HIVE REPORTS", "Kovanlarda ne oldu?": "What happened in the hives?", "Yerel yapay zekâ değerlendirmesi": "Local AI assessment", "Olay özeti": "Event summary", "Günün özeti": "Daily summary",
-  "Rapor geçmişi": "Report history", "Rapor yok": "No reports", "Son rapor": "Latest report", "Rapor filtreleri": "Report filters", "Rapor türü": "Report type", "Rapor geçmişinde ara": "Search report history", "Filtreleri uygula": "Apply filters", "rapor eşleşti": "reports matched", "İngilizce PDF": "English PDF", "Türkçe PDF": "Turkish PDF", "kayıt": "records", "Öğrenme sürüyor": "Learning", "Kovanı öğreniyor": "Learning this hive", "Saha doğrulaması bekleniyor": "Field check required", "Öğrenme, kovana bir dinleme cihazı eklendiğinde başlar.": "Learning starts once a listening device is added to the hive.", "Kayıt toplamaya devam etmek için kovanı yerinde kontrol edip sonucu girin.": "Inspect the hive on site and record the result to keep collecting.", "Cihaz ekle": "Add device", "Kayıt gönder": "Send recording", "Model eğitiliyor": "Training the model", "Kayıt gönderiliyor ve profil çıkarılıyor…": "Uploading the recording and building the profile…", "Sunucu üç dakika içinde yanıt vermedi. Sunucu günlüğünü kontrol edin.": "The server did not respond within three minutes. Check the server log.", "Sunucuya ulaşılamadı. Panel çalışıyor mu?": "Could not reach the server. Is the panel running?", "Profil eğitilemedi": "Profile could not be trained", "Eşikler doldu ancak model eğitimi tamamlanamadı. Birkaç kayıt daha gönderin; sorun sürerse sunucu günlüğüne bakın.": "The thresholds are met but training did not complete. Send a few more recordings; if it persists, check the server log.", "Toplanan kayıtlardan kovana özel akustik profil çıkarılıyor.": "Building this hive's own acoustic profile from the collected recordings.", "Profil hazır": "Profile ready", "Kovana özel akustik model eğitildi. Bu kovan artık izleniyor ve gerekirse alarm üretebilir.": "The hive's own acoustic model has been trained. This hive is now monitored and can raise an alarm when needed.", "Kaydı gönderin": "Send the recording", "Dosya yerel modelde çözümlenir; öğrenme sürüyorsa kayıt profile eklenir, profil hazırsa izleme akışında değerlendirilir.": "The file is analysed by the local model; while learning it is added to the profile, and once the profile is ready it is evaluated in the monitoring flow.", "Kovanı kaydet ve cihaz ekle": "Save hive and add device", "Sıradaki adım: cihaz eşleştirme": "Next step: pair a device", "Kaydettikten sonra kovana bir dinleme cihazı bağlayacaksınız. Öğrenme o adımda başlar ve": "After saving you will connect a listening device to the hive. Learning starts at that step and", "iPhone’da Sesli Notlar ile kaydedip dosyayı seçin ya da bilgisayarınızdaki bir WAV klasöründen yükleyin. Kayıt yalnızca yerel Waggle sunucusuna gönderilir, internete çıkmaz.": "Record with Voice Memos on iPhone and pick the file, or upload from a WAV folder on your computer. The recording goes only to the local Waggle server and never leaves your network.", "profil hazır olana kadar hiç alarm üretilmez": "no alarm is raised until the profile is ready", "Elinizde donanım yoksa “WAV klasörü” seçin: önceden alınmış ses kayıtlarını yükleyerek aynı akışı çalıştırabilirsiniz.": "No hardware yet? Choose \"WAV folder\" and upload previously captured recordings to run the same flow.", "Öne çıkan bulgu": "Key finding", "Dağılım": "Distribution", "Kalıcı olarak sil": "Delete permanently", "GERİ ALINAMAZ": "CANNOT BE UNDONE", "Kovanı kalıcı olarak sil": "Delete hive permanently", "Silinecek olay": "Events to delete", "Silinecek cihaz": "Devices to delete", "Kovan silindi": "Hive deleted", "olay": "events", "Kovan bilgisi alınamadı": "Could not read hive details", "Filtreler hangi raporun açılacağını belirler.": "Filters decide which report opens.", "Doğrulandı": "Confirmed", "Sorun yok": "No issue", "Tekrar kontrol": "Recheck", "Deterministik yedek motor": "Deterministic fallback engine", "Yapay zekâ modeline ulaşılamadı": "AI model was unreachable", "Yerelde işlendi": "Processed locally", "Kaynak kaydı yok · SQLite olay geçmişi": "No sources recorded · SQLite event history", "Metin yerel model tarafından yazıldı": "Text written by the local model", "Metni model yazdı": "Model wrote the text", "Yerel modelle": "With the local model", "Rapor geçmişi": "Report history", "Dönemi değiştir": "Change period", "GÜNCEL RAPOR": "CURRENT REPORT", "Hazırlayan": "Prepared by", "Karar deterministik doğrulayıcıdan geldi": "Decision came from the deterministic validator", "Yeni rapor üret": "Generate new report", "Rapor üretiliyor…": "Generating report…", "Yanıt gelmiyor…": "No response yet…", "Model uzun süredir yanıt vermiyor; sunucu günlüğünü kontrol edin.": "The model has not responded for a long time; check the server log.", "Rapor üretilemedi": "Report generation failed", "rapor üretildi": "reports generated", "Bu dönemde rapor üretilecek olay bulunmadı": "No events to report in this period",
+  "Rapor geçmişi": "Report history", "Rapor yok": "No reports", "Son rapor": "Latest report", "Rapor filtreleri": "Report filters", "Rapor türü": "Report type", "Rapor geçmişinde ara": "Search report history", "Filtreleri uygula": "Apply filters", "rapor eşleşti": "reports matched", "İngilizce PDF": "English PDF", "Türkçe PDF": "Turkish PDF", "kayıt": "records", "Öğrenme sürüyor": "Learning", "Kovanı öğreniyor": "Learning this hive", "Saha doğrulaması bekleniyor": "Field check required", "Öğrenme, kovana bir dinleme cihazı eklendiğinde başlar.": "Learning starts once a listening device is added to the hive.", "Kayıt toplamaya devam etmek için kovanı yerinde kontrol edip sonucu girin.": "Inspect the hive on site and record the result to keep collecting.", "Cihaz ekle": "Add device", "Kayıt gönder": "Send recording", "Model eğitiliyor": "Training the model", "Kayıt gönderiliyor ve profil çıkarılıyor…": "Uploading the recording and building the profile…", "Sunucu üç dakika içinde yanıt vermedi. Sunucu günlüğünü kontrol edin.": "The server did not respond within three minutes. Check the server log.", "Sunucuya ulaşılamadı. Panel çalışıyor mu?": "Could not reach the server. Is the panel running?", "Profil eğitilemedi": "Profile could not be trained", "Eşikler doldu ancak model eğitimi tamamlanamadı. Birkaç kayıt daha gönderin; sorun sürerse sunucu günlüğüne bakın.": "The thresholds are met but training did not complete. Send a few more recordings; if it persists, check the server log.", "Toplanan kayıtlardan kovana özel akustik profil çıkarılıyor.": "Building this hive's own acoustic profile from the collected recordings.", "Profil hazır": "Profile ready", "Kovana özel akustik model eğitildi. Bu kovan artık izleniyor ve gerekirse alarm üretebilir.": "The hive's own acoustic model has been trained. This hive is now monitored and can raise an alarm when needed.", "Kaydı gönderin": "Send the recording", "Dosya yerel modelde çözümlenir; öğrenme sürüyorsa kayıt profile eklenir, profil hazırsa izleme akışında değerlendirilir.": "The file is analysed by the local model; while learning it is added to the profile, and once the profile is ready it is evaluated in the monitoring flow.", "Kovanı kaydet ve cihaz ekle": "Save hive and add device", "Sıradaki adım: cihaz eşleştirme": "Next step: pair a device", "Kaydettikten sonra kovana bir dinleme cihazı bağlayacaksınız. Öğrenme o adımda başlar ve": "After saving you will connect a listening device to the hive. Learning starts at that step and", "iPhone’da Sesli Notlar ile kaydedip dosyayı seçin ya da bilgisayarınızdaki bir WAV klasöründen yükleyin. Kayıt yalnızca yerel Waggle sunucusuna gönderilir, internete çıkmaz.": "Record with Voice Memos on iPhone and pick the file, or upload from a WAV folder on your computer. The recording goes only to the local Waggle server and never leaves your network.", "profil hazır olana kadar hiç alarm üretilmez": "no alarm is raised until the profile is ready", "Elinizde donanım yoksa “WAV klasörü” seçin: önceden alınmış ses kayıtlarını yükleyerek aynı akışı çalıştırabilirsiniz.": "No hardware yet? Choose \"WAV folder\" and upload previously captured recordings to run the same flow.", "Öne çıkan bulgu": "Key finding", "Dağılım": "Distribution", "Kalıcı olarak sil": "Delete permanently", "GERİ ALINAMAZ": "CANNOT BE UNDONE", "Kovanı kalıcı olarak sil": "Delete hive permanently", "Silinecek olay": "Events to delete", "Silinecek cihaz": "Devices to delete", "Kovan silindi": "Hive deleted", "olay": "events", "Kovan bilgisi alınamadı": "Could not read hive details", "Filtreler hangi raporun açılacağını belirler.": "Filters decide which report opens.", "Doğrulandı": "Confirmed", "Sorun yok": "No issue", "Tekrar kontrol": "Recheck", "Deterministik yedek motor": "Deterministic fallback engine", "Yapay zekâ modeline ulaşılamadı": "AI model was unreachable", "Yerelde işlendi": "Processed locally", "Kaynak kaydı yok · SQLite olay geçmişi": "No sources recorded · SQLite event history", "Metin yerel model tarafından yazıldı": "Text written by the local model", "Metni model yazdı": "Model wrote the text", "Yerel modelle": "With the local model", "Rapor geçmişi": "Report history", "Dönemi değiştir": "Change period", "GÜNCEL RAPOR": "CURRENT REPORT", "Hazırlayan": "Prepared by", "Karar deterministik doğrulayıcıdan geldi": "Decision came from the deterministic validator", "Yeni rapor üret": "Generate new report", "Rapor üretiliyor…": "Generating report…", "Rapor üretiliyor": "Generating report", "Yanıt gelmiyor…": "No response yet…", "Yanıt gelmiyor": "No response yet", "Model uzun süredir yanıt vermiyor; sunucu günlüğünü kontrol edin.": "The model has not responded for a long time; check the server log.", "Rapor üretilemedi": "Report generation failed", "rapor üretildi": "reports generated", "Bu dönemde rapor üretilecek olay bulunmadı": "No events to report in this period",
   "Türkçe rapor": "Turkish report", "İngilizce rapor": "English report", "Üretici": "Generator",
   "Haftalık değerlendirme": "Weekly assessment", "Rapor dönemi": "Report period", "Yerel yapay zekâ": "Local AI",
   "Bu hafta kovanlarda ne oldu?": "What happened in the hives this week?", "Akustik olaylar, saha kontrolleri ve önerilen adımlar tek bir değerlendirmede.": "Acoustic events, field inspections, and recommended actions in one assessment.",
   "YAPAY ZEKÂ ÖZETİ": "AI SUMMARY", "Kovanı kontrol et": "Inspect the hive",
   "İki yerel model aynı kararda birleşti.": "Two local models reached the same decision.",
+  "Tek yerel modelin kararı; çapraz doğrulama yapılmadı.": "One local model's decision; no cross-check was made.",
+  "Model cihazda çalışıyor. Bu donanımda genellikle 3–5 dakika sürer; bu sırada paneli kullanmaya devam edebilirsiniz.":
+    "The model is running on this device; it usually takes three to five minutes on this hardware. The panel stays usable meanwhile.",
+  "Model uzun süredir yanıt vermiyor. Sunucu günlüğüne bakın; panel çalışmaya devam ediyor.":
+    "The model has not answered for a long time. Check the server log; the panel keeps working.",
   "İki yerel model farklı karar verdi; temkinli olan seçildi.": "The two local models disagreed; the more cautious reading was kept.",
+  "YEREL KILAVUZ": "LOCAL GUIDANCE", "Değerlendirmelerin dayandığı notlar": "The notes assessments rest on",
+  "Bu notlar cihazda saklanır ve internete çıkmaz. Bir rapor üretilirken döneme uyanlar seçilip modele verilir; modelin gördüğü tek dış bilgi budur.": "These notes live on this device and never leave it. When a report is generated the ones matching the period are selected and handed to the model; they are the only outside information it sees.",
+  "Kılavuzda ara": "Search the guidance", "not": "notes", "Bu konuda not bulunamadı.": "No note matches that topic.", "Kılavuz": "Guidance",
+  "MODEL KARARI": "MODEL DECISION", "Tespit edilen örüntü": "Pattern identified",
+  "Kraliçe kaybıyla uyumlu": "Compatible with queen loss", "Fiziksel kontrol": "Physical inspection",
+  "Önerilen eylemler": "Recommended actions", "Rutin": "Routine", "İzleme": "Watch", "Acil": "Immediate",
+  "Normal aralıkta": "Within baseline", "Gelişen akustik değişim": "Developing acoustic change",
+  "Kalıcı akustik değişim": "Persistent acoustic change",
+  "Uyumlu olabilir, kesin tanı değil": "May be compatible; not a diagnosis", "Uyumlu değil": "Not compatible",
+  "Gerekli": "Required", "Şu an gerekmiyor": "Not required now",
+  "İzlemeye devam": "Keep monitoring", "Kaydı tekrarla": "Record again",
+  "Kovanı fiziksel kontrol et": "Inspect the hive", "Kraliçeyi doğrula": "Verify the queen",
+  "Saha doğrulamaları": "Field checks", "Yerel kılavuz tabanı": "Local guidance base",
+  "Öğrenme kayıtları": "Enrollment recordings", "Cihazlar": "Devices",
+  "Kovanın profilini oluşturan kayıtlar: hangi cihazdan, hangi gün, kaç pencere ve sağlıklı doğrulanıp doğrulanmadığı. 42 kayıt / 14 gün eşiğinin dayanağı budur. Ses dosyaları değil, yalnızca kayıt defteri.":
+    "The recordings a hive's profile was built from: which device, which day, how many windows, and whether it was confirmed healthy. This is what the 42-recording, 14-day threshold rests on. The ledger, not the audio.",
+  "Hangi mikrofonun hangi kovana bağlı olduğu, türü, etkinliği ve en son ne zaman kayıt gönderdiği.":
+    "Which microphone belongs to which hive, its kind, whether it is active, and when it last sent a recording.",
+  "Kovanı yerinde kontrol eden hesap, gözlem ve sonucun profile alınıp alınmadığı.": "The account that inspected the hive on site, what was observed, and whether the result entered the profile.",
+  "Değerlendirmelerin dayandığı gözden geçirilmiş notlar, etiketleri ve seçim koşullarıyla.": "The reviewed notes an assessment can rest on, with their tags and selection conditions.",
   "DAYANDIĞI KILAVUZ": "GROUNDING NOTES", "Bu değerlendirme neye dayanıyor": "What this assessment rests on",
   "Yerel kılavuzdan bu döneme uyan notlar seçildi ve modele yalnızca bunlar verildi.": "The notes matching this period were selected from the local guidance, and only those were given to the model.",
   "Değerlendirilen dönem": "Assessment period", "Raporu hazırlayan": "Prepared by", "GENEL DURUM": "OVERALL STATUS", "Haftanın özeti": "Weekly summary", "SONRAKİ ADIMLAR": "NEXT STEPS", "Öncelikli öneriler": "Priority recommendations",
@@ -112,6 +166,7 @@ const english = {
   "Bu haftanın özeti": "This week's summary", "Önerilen adımlar": "Recommended actions", "Saha kontrolleri": "Field inspections",
   "Bu rapor döneminde kaydedilen alarm sonuçları": "Alert outcomes recorded during this report period",
   "Yerel ve kaynaklı": "Local and grounded", "SQLite olay geçmişi": "SQLite event history",
+  "Ölçüm modeli": "Measurement model",
   "RAG ile kaynaklandırıldı": "Grounded with RAG", "Agent tarafından hazırlandı": "Prepared by Agent", "kaynak": "sources",
   "Waggle, akustik değişimleri erken uyarı olarak yorumlar; saha incelemesinin yerini almaz.": "Waggle interprets acoustic changes as early warnings; it does not replace field inspection.", "SORUMLULUK SINIRI": "SCOPE OF RESPONSIBILITY",
   "Henüz haftalık değerlendirme bulunmuyor. İlk rapor oluşturulduğunda kovanların durumu ve önerilen adımlar burada görünecek.": "No weekly assessment is available yet. Hive status and recommended actions will appear here when the first report is generated.",
@@ -163,14 +218,54 @@ const english = {
   ,"Gölbaşı Arılığı": "Gölbaşı Apiary", "aykırı ses penceresi": "anomalous audio windows", "Detayları gör": "View details"
   ,"Son güncelleme": "Last updated", "Kovanın fiziksel olarak kontrol edilmesi öneriliyor.": "A physical hive inspection is recommended."
   ,"aykırı ses": "anomalous audio", "Açık alarm yok": "No open alarms", "Bu filtrede alarm yok": "No alarms match this filter"
+  // Alarm kartının yeni düzeni
+  ,"Kovanın alarmlarını aç veya kapat": "Show or hide this hive's alarms"
+  ,"Alarm algılandı": "Alarm raised", "Fiziksel kontrol": "Physical inspection", "Sonucu kaydet": "Record the outcome"
+  ,"Aykırı ses": "Anomalous audio", "Ölçülmedi": "Not measured"
+  ,"Fiziksel kontrolü başlat": "Start the physical inspection", "Kovanı incele": "Open the hive"
+  ,"sapma şiddeti": "severity", "Aykırı ses ölçülmedi": "Anomalous audio not measured", "Şiddet ölçülmedi": "Severity not measured"
+  ,"Detayları aç": "Open details", "Yerel kılavuz": "Local guidance"
+  // Kapanmış alarm kartı
+  ,"Alarm kapandı": "No open alarms", "Kapandı": "Closed"
+  ,"Fiziksel kontrol tamamlandı": "Physical inspection completed"
+  ,"Alarm saha kontrolüyle kapatıldı. Yeni bir kalıcı değişim algılanırsa tekrar bildirim oluşturulur.": "The alarm was closed by a field inspection. A new alert is raised if another lasting change is detected."
+  ,"Kayıt başarıyla kaydedildi": "The record was saved"
+  ,"Kontrol sonucu": "Inspection outcome", "Belirgin sorun görülmedi": "No clear issue found"
+  ,"Kontrol eden": "Inspected by", "Alarm anındaki ölçüm": "Measured when the alarm was raised"
+  ,"Sonuç kaydedildi": "Outcome recorded"
+  // Kovan detayı sayfası
+  ,"Kesintisiz değişim": "Unbroken change", "sn": "s", "Alarm eşiği 30 saniyedir": "The alarm threshold is 30 seconds"
+  ,"Kovanın son kaydına göre": "From this hive's latest record", "Acil kontrol önerilir": "An inspection is recommended"
+  ,"Kaydın normal aralık dışında kalan bölümü": "How much of the recording fell outside the normal range"
+  ,"Sesin normal profilden uzaklığı": "How far the sound moved from the normal profile"
+  ,"Kalıcı akustik değişim sürüyor": "A lasting acoustic change is under way"
+  ,"Alarm kaydını incele": "Review the alarm record"
+  ,"Son 24 saatte": "In the last 24 hours", "Son 7 günde": "In the last 7 days", "Son 30 günde": "In the last 30 days"
+  ,"Bu dönemde kayıt yok": "No records in this period"
+  ,"Bu durumda ne yapmalı?": "What to do about this", "Yerel kılavuzu aç": "Open the local guidance"
+  ,"Kovanı fiziksel olarak kontrol edin": "Inspect the hive physically"
+  ,"Kraliçe ve yavru düzenini doğrulayın": "Verify the queen and the brood pattern"
+  ,"Sonucu kaydedin": "Record what you found"
+  ,"Yeni bir ses kaydı alın": "Take another recording"
+  ,"Değişimin sürüp sürmediğine bakın": "See whether the change is continuing"
+  ,"Sürerse fiziksel kontrole geçin": "Move to a physical inspection if it does"
+  ,"Rutin akustik izlemeye devam edin": "Continue routine acoustic monitoring"
+  ,"Kayıtları benzer saatlerde alın": "Record at similar times of day"
+  ,"Mikrofonun yerini değiştirmeyin": "Leave the microphone where it is"
+  ,"İzleme bilgisi": "Monitoring setup", "Model": "Model", "Sesli alarm": "Audible alarm"
+  ,"Açık": "On", "Kapalı": "Off", "Kayıt yok": "No record"
   ,"Kovanlarınızın kritik olayları burada görünecek.": "Critical hive events will appear here."
   ,"Tüm sistemler çalışıyor": "All systems operational", "Sistem çalışıyor, bazı bağlantılar veri bekliyor": "System operational; some integrations are waiting for data"
   ,"Panel ve bütün entegrasyonlar güncel veri üretiyor.": "The panel and all integrations are producing current data."
   ,"Bekleyen bileşenlerin ayrıntılarını aşağıda görebilirsiniz.": "Details of pending components are shown below."
   ,"Çalışıyor": "Operational", "Kontrol gerekli": "Check required", "Son bağlantı": "Last connection", "Son kontrol": "Last checked"
+  ,"Güncellendi": "Updated"
   ,"Canlı veri alınıyor": "Receiving live data", "Cihaz veya model sonuçları güvenli bağlantı üzerinden panele ulaşıyor.": "Device or model results are reaching the panel over a secure connection."
   ,"İlk veri bekleniyor": "Waiting for first event", "Kovan cihazı veya akustik analiz servisi ilk olayı gönderdiğinde bağlantı zamanı burada görünecek.": "The connection time will appear here after the hive device or acoustic analysis service sends its first event."
   ,"Cihaz verisi gecikiyor": "Device data is delayed", "Son olay beklenen süreden eski. Kovan cihazını, modeli ve yerel ağ bağlantısını kontrol edin.": "The latest event is older than expected. Check the hive device, model, and local network."
+  ,"Akustik model (ONNX)": "Acoustic model (ONNX)", "Akustik model hazır": "Acoustic model ready"
+  ,"Akustik model dosyası eksik": "Acoustic model file is missing", "Karar eşleşmesi doğrulanmadı": "Decision parity not verified"
+  ,"karar eşleşmesi raporu bulunamadı": "no decision parity report found"
   ,"Rapor entegrasyonu çalışıyor": "Report integration operational", "Üretilen değerlendirme raporları panele kaydediliyor.": "Generated assessment reports are being stored in the panel."
   ,"İlk rapor bekleniyor": "Waiting for first report", "İlk haftalık değerlendirme gönderildiğinde burada son rapor zamanı görünecek.": "The latest report time will appear here after the first assessment is submitted."
   ,"Rapor güncel değil": "Report is outdated", "Son haftalık değerlendirme beklenen süreden eski. Rapor üretim akışını kontrol edin.": "The latest assessment is older than expected. Check the report generation flow."
@@ -180,7 +275,6 @@ const english = {
   ,"Konum belirtilmedi": "Location not specified", "Düzenle": "Edit", "Pasif hâle getir": "Deactivate", "Arşivlendi": "Archived", "Yeniden etkinleştir": "Reactivate", "Henüz kovan eklenmedi.": "No hives have been added yet."
   ,"Yeni kovan ekle": "Add new hive", "Kovanı kaydet": "Save hive", "Değişiklikleri kaydet": "Save changes"
   ,"Kovan kaydedilemedi": "Hive could not be saved", "Kovan durumu değiştirilemedi": "Hive status could not be changed"
-  ,"Demo hazırlanıyor…": "Preparing demo…", "Demo başlatılamadı": "Demo could not be started"
   ,"Çevrimiçi hava durumu kapalı": "Online weather is disabled", "Temel kovan izleme internet olmadan çalışmaya devam eder.": "Core hive monitoring continues without an internet connection."
   ,"Nem": "Humidity", "Rüzgâr": "Wind", "Kovan İzleme": "Hive Monitoring", "Bağlantı kurulamadı": "Connection failed"
   ,"Önce bir Waggle .db yedek dosyası seçin.": "Select a Waggle .db backup file first."
@@ -208,10 +302,29 @@ const english = {
   ,"2 saniye": "2 seconds", "5 saniye": "5 seconds", "10 saniye": "10 seconds", "30 saniye": "30 seconds", "60 saniye": "60 seconds"
   ,"Waggle’ın temel kovan izleme işlevleri internet olmadan çalışır.": "Waggle's core hive monitoring functions work without internet access."
   ,"Açıldığında yapılandırılmış koordinatlar Open-Meteo servisine gönderilir.": "When enabled, the configured coordinates are sent to Open-Meteo."
+  ,"Enlem": "Latitude", "Boylam": "Longitude"
+  ,"Hava durumu bu koordinatlar için sorulur. Yukarıdaki ad yalnızca etikettir: ikisi ayrı yerleri gösterirse panel başka bir yerin havasını kovanlığınızın adıyla kaydeder.": "Weather is requested for these coordinates. The name above is only a label: if the two point at different places, the panel records another location's weather under your apiary's name."
+  ,"Hava durumu alınamadı": "Weather unavailable"
+  ,"Servise ulaşılamıyor. Kovan izleme bundan etkilenmez; kayıtlara hava bilgisi eklenmez.": "The service cannot be reached. Hive monitoring is unaffected; recordings are stored without weather."
+  ,"Bu işlem mevcut kovan, olay, alarm, rapor ve ayarları seçilen yedekle değiştirecek. Devam edilsin mi?": "This replaces the current hives, events, alarms, reports and settings with the selected backup. Continue?"
   ,"Waggle’ın temel kullanım adımlarını yeniden görüntüleyin.": "Review Waggle's essential usage steps."
   ,"Kovanınızı ekleyin": "Add your hive", "Uyarıları takip edin": "Follow alerts", "Rapor ve yedekleri kullanın": "Use reports and backups"
   ,"Dört kısa adımda kovanlarınızı izlemeye başlayın.": "Start monitoring your hives in four short steps."
   ,"Bu rehberi daha sonra Ayarlar bölümünden tekrar açabilirsiniz.": "You can reopen this guide later from Settings."
+  // Hızlı başlangıç rehberi (adım adım)
+  ,"Kovanlarınızı izlemeye dört kısa adımda başlayın.": "Start monitoring your hives in four short steps."
+  ,"Rehberi kapat": "Close the guide", "Bağlantı": "Connection", "Şimdilik geç": "Skip for now", "Geri": "Back", "Devam et": "Continue"
+  ,"Bu rehberi Ayarlar’dan yeniden açabilirsiniz.": "You can reopen this guide from Settings."
+  ,"İlk kovanınızı ekleyin": "Add your first hive"
+  ,"Kovanınıza anlaşılır bir ad ve konum verin. Teknik sensör kimliğini Waggle otomatik oluşturur.": "Give your hive a clear name and location. Waggle creates the technical sensor ID for you."
+  ,"Örn. Bahçe Kovanı": "E.g. Garden Hive", "Örn. Gölbaşı Arılığı": "E.g. Gölbaşı Apiary"
+  ,"Yazdıklarınız yalnızca kovan ekleme formuna taşınır; kaydetme kararı sizde kalır.": "What you type is only carried into the add-hive form; saving stays your decision."
+  ,"Kovan cihazından veya akustik analiz servisinden gelen olaylar güvenli biçimde panele aktarılır. Model, kovanın sağlıklı sesini öğrenene kadar hiç alarm üretmez.": "Events from the hive device or the acoustic analysis service are delivered securely to the panel. The model raises no alarm until it has learned the hive's healthy sound."
+  ,"Bağlantı durumunu": "You can follow the connection status on the", "ekranından izleyebilirsiniz.": "screen."
+  ,"Kalıcı bir akustik değişim görüldüğünde panel alarm açar. Kovanı yerinde inceleyin ve gördüğünüz sonucu alarma işleyin.": "When a persistent acoustic change appears, the panel raises an alarm. Inspect the hive on site and record what you saw on the alarm."
+  ,"Alarmlar bölümü açık ve kontrol edilen kayıtları ayrı ayrı listeler.": "The Alarms section lists open and inspected records separately."
+  ,"Haftalık değerlendirmeleri okuyun; gerektiğinde kayıtları dışa aktarın veya tam veritabanı yedeğini indirin.": "Read the weekly assessments; export records or download a full database backup when you need to."
+  ,"Raporlar ve yedekler bu cihazda üretilir; hiçbir kayıt dışarı gönderilmez.": "Reports and backups are produced on this device; no record leaves it."
   ,"MOBİL SES KAYDI": "MOBILE AUDIO CAPTURE", "Telefonu sensör olarak kullan": "Use this phone as a sensor", "Yerel ağ": "Local network"
   ,"Telefonunuzla kısa bir kovan sesi kaydedin veya mevcut bir ses dosyası seçin. Kayıt tarayıcıda WAV biçimine dönüştürülür, Mac’teki ONNX modeliyle analiz edilir ve sonuç SQLite’a kaydedilir.": "Record a short hive sound with your phone or choose an existing audio file. The browser converts it to WAV, the ONNX model on the Mac analyzes it, and the result is stored in SQLite."
   ,"Kovanı seçin": "Select a hive", "Kovanlar yükleniyor…": "Loading hives…", "Ses kaydedin veya dosya seçin": "Record audio or choose a file"
@@ -227,6 +340,49 @@ const english = {
   ,"Akustik sensör": "Acoustic sensor", "WAV klasörü": "WAV folder", "Cihazlar ve model": "Devices and model"
   ,"Bağlı cihaz": "Connected device", "Ses kaydı seçin": "Choose an audio recording", "Kaydı gönder": "Send recording"
   ,"iPhone’da Sesli Notlar ile kaydedip dosyayı seçin. Kayıt yalnızca yerel Waggle sunucusuna gönderilir.": "Record with Voice Memos on iPhone, then choose the file. Audio is sent only to the local Waggle server."
+  ,"Waggle deneyimini kovanlığınıza göre düzenleyin.": "Tune the Waggle experience to your apiary."
+  ,"adım": "steps", "tamamlandı": "completed", "henüz tamamlanmadı": "not completed yet", "Rehberi aç": "Open the guide", "Başlangıç rehberi": "Getting started"
+  ,"Genel": "General", "Güvenlik": "Security", "Yerel kılavuz": "Local guidance", "Ekip": "Team", "Önerilen": "Recommended"
+  ,"Ayar bölümleri": "Settings sections", "Kovanlığınız": "Your apiary", "Yenileme sıklığı": "Refresh interval"
+  ,"Kaydedilmemiş değişiklikler var": "You have unsaved changes", "Tüm değişiklikler kaydedildi": "All changes saved"
+  ,"kovan": "hives", "not": "notes"
+  ,"2 sn": "2 s", "5 sn": "5 s", "10 sn": "10 s", "30 sn": "30 s", "60 sn": "60 s"
+  ,"Kovandan rapora veri yolculuğu": "A recording's journey from hive to report"
+  ,"Kontroller yerel ağda çalışır": "These checks run on the local network"
+  ,"Bağlantı geçmişi": "Connection history", "Geçmişi gizle": "Hide history"
+  ,"Bağlantı geçmişi alınamadı": "Could not read the connection history"
+  ,"Bu bileşenden henüz hiç kayıt ulaşmadı.": "Nothing has arrived from this component yet."
+  ,"Olay raporu": "Event report", "Günlük rapor": "Daily report"
+  ,"Veri zinciri": "Data chain", "Bir kayıt mikrofondan panele bu sırayla ulaşır. Zincirin nerede durduğu buradan okunur.": "A recording travels from the microphone to the panel in this order. This is where you see where it stopped."
+  ,"sağlıklı": "healthy", "veri bekliyor": "waiting for data", "kontrol gerekli": "need attention"
+  ,"Sorun giderme adımları": "Troubleshooting steps", "Son veri": "Last data", "önce": "ago", "gecikti": "late", "beklenen aralık": "expected interval"
+  ,"dakika": "minutes", "saat": "hours", "gün": "days"
+  ,"Zincirin tamamı çalışıyor": "The whole chain is running", "Kayıtlar mikrofondan panele kadar kesintisiz ulaşıyor; yapılacak bir şey yok.": "Recordings reach the panel from the microphone without a break; nothing to do."
+  ,"Kovan cihazları": "Hive devices", "Beklenen aralıkta yeni kayıt gelmedi; zincir burada duruyor.": "No new recording arrived within the expected interval; the chain stops here."
+  ,"Kovan cihazının açık ve şarjlı olduğunu doğrulayın": "Check the hive device is powered and charged"
+  ,"Cihazın yerel ağa bağlı olduğunu kontrol edin": "Check the device is connected to the local network"
+  ,"Kovanlarım sayfasından elle bir kayıt göndererek zinciri sınayın": "Send a recording by hand from My Hives to test the chain"
+  ,"Kovana bir dinleme cihazı ekleyin": "Add a listening device to the hive"
+  ,"Kovanlarım sayfasından ilk kaydı gönderin": "Send the first recording from My Hives"
+  ,"Foundry Local sunucusunun çalıştığını doğrulayın": "Check that the Foundry Local server is running"
+  ,"Raporlar sayfasından elle bir rapor üretmeyi deneyin": "Try generating a report by hand from Reports"
+  ,"Sunucu günlüğünde model çağrısının hatasına bakın": "Look for the model call's error in the server log"
+  ,"Raporlar sayfasından ilk değerlendirmeyi üretin": "Generate the first assessment from Reports"
+  ,"Dışa Aktar sayfasından hemen bir SQLite yedeği alın": "Take a SQLite backup now from Export"
+  ,"Sağlam bir yedekten geri yükleyin": "Restore from a sound backup"
+  ,"Kovan cihazları kayıtları panele göndermeye devam ediyor.": "Hive devices keep sending recordings to the panel."
+  ,"Kovan cihazı ilk kaydı gönderdiğinde bağlantı zamanı burada görünecek.": "When the hive device sends its first recording, the connection time appears here."
+  ,"Dosya seçilmedi": "No file chosen", "Dosya seç": "Choose file"
+  ,"Operasyon": "Operations", "Sistem": "System", "Veri türü ara": "Search data types", "Veri türü grubu": "Data type group"
+  ,"Aramanızla eşleşen veri türü yok.": "No data type matches your search.", "Biçim": "Format", "Dönem": "Period"
+  ,"Tüm zamanlar": "All time", "Son 7 gün": "Last 7 days", "Son 30 gün": "Last 30 days", "Son 90 gün": "Last 90 days", "Son 1 yıl": "Last year"
+  ,"Veri türü seçin": "Choose what to export", "veri türü seçildi": "data types selected", "Zip olarak indir": "Download as zip"
+  ,"İndirmek istediğiniz kayıtları seçin. Birden fazla seçerseniz hepsi tek bir zip dosyasında iner.": "Choose the records you want. Pick more than one and they arrive together in a single zip."
+  ,"bu veri türlerinin bir dönemi yoktur; seçilen aralıktan bağımsız olarak tamamı iner.": "these have no period of their own, so they are exported in full whatever range is chosen."
+  ,"Model durumları, akustik değişim oranları, ölçüm koşulları ve zamanlar.": "Model decisions, acoustic change ratios, the conditions they were measured in, and their times."
+  ,"Haftalık değerlendirmeler, model kararları ve dayandıkları kaynaklar.": "Weekly assessments, the model's decisions and the sources they rest on."
+  ,"Kovanın profilini oluşturan kayıt defteri: hangi cihaz, hangi gün, kaç pencere. Ses dosyaları değil.": "The logbook behind a hive's profile: which device, which day, how many windows. Not the audio itself."
+  ,"Hangi mikrofonun hangi kovana bağlı olduğu, türü ve en son ne zaman kayıt gönderdiği.": "Which microphone belongs to which hive, its kind, and when it last sent a recording."
   ,"Cihaz bekleniyor": "Waiting for device", "Öğrenme devam ediyor": "Learning in progress", "Profil hazır": "Profile ready", "İzleme etkin": "Monitoring active"
   ,"tamamlandı": "complete", "Kovana özel model": "Hive-specific model", "Gerekirse alarm": "Alarms when needed"
   ,"EKİP": "TEAM", "Çalışanlar": "Workers", "+ Çalışan ekle": "+ Add a worker", "Çalışanı ekle": "Add worker"
@@ -313,12 +469,39 @@ function td(value) {
   if (currentLanguage !== "en" || translated !== value) return translated;
   const counts = value.match(/^(\d+) kovan, (\d+) olay ve (\d+) rapor kayıtlı\.$/);
   if (counts) return `${counts[1]} hives, ${counts[2]} events, and ${counts[3]} reports stored.`;
+  // A component detail is a list of independent facts joined with "·". Translating each
+  // one on its own is what keeps a fact carrying a number from having to be listed whole.
+  if (value.includes(" · ")) return value.split(" · ").map(tdFact).join(" · ");
+  return value;
+}
+
+function tdFact(value) {
+  const translated = t(value);
+  if (translated !== value) return translated;
+  const parity = value.match(/^referans modelde (\d+) satırda karar eşleşmesi doğrulandı$/);
+  if (parity) return `decision parity verified over ${parity[1]} rows on the reference model`;
+  const hives = value.match(/^(\d+) kovan kendi profiliyle izleniyor$/);
+  if (hives) return `${hives[1]} ${hives[1] === "1" ? "hive" : "hives"} monitored with their own profile`;
+  const verified = value.match(/^(\d+)\/(\d+) kovan profili karar eşleşmesiyle doğrulandı$/);
+  if (verified) return `${verified[1]}/${verified[2]} hive profiles verified by decision parity`;
+  const missing = value.match(/^model dosyası bulunamadı: (.+)$/);
+  if (missing) return `model file not found: ${missing[1]}`;
   return value;
 }
 
 function translatePage(root = document.body) {
   document.documentElement.lang = currentLanguage;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  // Everything inside [data-user-text] is something a person typed — a hive's name, an
+  // apiary's location, an account's display name. This sweep translates every string it
+  // walks past, and it could not tell those from interface copy: a colony actually called
+  // "Bahçe Kovanı" was renamed to "Garden Hive" on the English panel, and any name that
+  // happened to match a phrase in the table would have been rewritten the same way. A
+  // record the panel silently renames is not the beekeeper's record any more.
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => node.parentElement && node.parentElement.closest("[data-user-text]")
+      ? NodeFilter.FILTER_REJECT
+      : NodeFilter.FILTER_ACCEPT,
+  });
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (!node._waggleOriginal) node._waggleOriginal = node.nodeValue;
     const original = node._waggleOriginal;
@@ -339,17 +522,26 @@ function translatePage(root = document.body) {
 }
 
 function statusLabel(status) { return t({ normal: "Normal", uyari: "Uyarı", kritik: "Kritik", veri_yok: "Veri yok" }[status]); }
-const colors = { normal: "#15803d", uyari: "#b7791f", kritik: "#c62828", veri_yok: "#6d7685" };
+const colors = { normal: "#0b7a31", uyari: "#96600c", kritik: "#bd1f1e", veri_yok: "#646d7c" };
 const hiveNames = { H1: "Bahçe Kovanı", H2: "Orman Kovanı", H3: "Çayır Kovanı" };
 
-function displayHiveName(name) { return t(name); }
+// A hive's name is something a beekeeper typed, not interface copy, so it is shown as
+// written. It used to go through the translation table, which holds the three demo hives
+// by name: a real colony called "Bahçe Kovanı" was renamed to "Garden Hive" on screen,
+// and any hive whose name happened to collide with a UI string would have been rewritten
+// too. The demo server keeps the translation, because there the names are part of the
+// script rather than somebody's record of their own apiary.
+function displayHiveName(name) { return demoAvailable ? t(name) : name; }
+function displayHiveLocation(location) { return demoAvailable ? t(location) : location; }
 
 function hiveLabel(hiveId) {
   return `${displayHiveName(hiveNames[hiveId]) || t("Kovan")} (${hiveId})`;
 }
 
 function hiveColor(hiveId) {
-  const colors = ["#15803d", "#b7791f", "#c62828", "#2563eb", "#7c3aed", "#0f766e"];
+    // Chart lines are shapes, not words: they take the vivid family so several hives stay
+  // apart at a glance, and each clears 3:1 against the page.
+  const colors = ["#0f8a3c", "#b8760e", "#d02020", "#2563eb", "#7c3aed", "#0f766e"];
   const number = Number(hiveId.slice(1)) || 1;
   return colors[(number - 1) % colors.length];
 }
@@ -359,6 +551,13 @@ function explainHiveIds(text) {
     (result, hiveId) => result.replace(new RegExp(`\\b${hiveId}\\b`, "g"), hiveLabel(hiveId)),
     text
   );
+}
+
+// Turkish writes the sign in front of the number and English writes it after: %100
+// against 100%. It was hard-coded in front everywhere but three report sentences, so an
+// English panel read "%100 anomalous audio" on its own alarm cards.
+function pct(value) {
+  return currentLanguage === "en" ? `${value}%` : `%${value}`;
 }
 
 function dateLabel(value) {
@@ -372,16 +571,30 @@ function escapeHtml(value) {
   return element.innerHTML;
 }
 
+// One audio context for the whole session, opened on the first alarm and kept. Opening a
+// new one per beep left every previous one running: browsers cap how many a page may hold,
+// and the alarm tone is the last thing that should stop working after a long shift.
+let alarmAudio = null;
+
 function beep() {
   if (!soundEnabled) return;
-  const context = new AudioContext();
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  oscillator.frequency.value = 760;
-  gain.gain.setValueAtTime(.12, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .45);
-  oscillator.connect(gain).connect(context.destination);
-  oscillator.start(); oscillator.stop(context.currentTime + .45);
+  try {
+    if (!alarmAudio) alarmAudio = new AudioContext();
+    // A context created before the page was interacted with starts suspended.
+    if (alarmAudio.state === "suspended") alarmAudio.resume();
+    const oscillator = alarmAudio.createOscillator();
+    const gain = alarmAudio.createGain();
+    oscillator.frequency.value = 760;
+    gain.gain.setValueAtTime(.12, alarmAudio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, alarmAudio.currentTime + .45);
+    oscillator.connect(gain).connect(alarmAudio.destination);
+    oscillator.start(); oscillator.stop(alarmAudio.currentTime + .45);
+    // The nodes are what accumulate once the context is shared; the context is not.
+    oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+  } catch (error) {
+    // A silent alarm is bad; a banner that fails to appear because the tone threw is worse.
+    console.warn("Waggle: sesli uyarı çalınamadı", error);
+  }
 }
 
 async function restoreBackup() {
@@ -393,8 +606,10 @@ async function restoreBackup() {
     message.textContent = t("Önce bir Waggle .db yedek dosyası seçin.");
     return;
   }
+  // The three other confirmations on this panel are translated; this one, the only
+  // irreversible one, asked in Turkish whatever language the screen was in.
   const confirmed = window.confirm(
-    "Bu işlem mevcut kovan, olay, alarm, rapor ve ayarları seçilen yedekle değiştirecek. Devam edilsin mi?"
+    t("Bu işlem mevcut kovan, olay, alarm, rapor ve ayarları seçilen yedekle değiştirecek. Devam edilsin mi?")
   );
   if (!confirmed) return;
   button.disabled = true;
@@ -446,7 +661,7 @@ function render(data) {
   };
   hivesEl.innerHTML = data.hives.map(hive => `
     <article class="hive-list-row" style="--status:${colors[hive.durum]}">
-      <div class="hive-list-name"><strong>${escapeHtml(displayHiveName(hive.name))}</strong><small>${hive.hive_id}${hive.location ? ` · ${escapeHtml(t(hive.location))}` : ""}</small></div>
+      <div class="hive-list-name" data-user-text><strong>${escapeHtml(displayHiveName(hive.name))}</strong><small>${hive.hive_id}${hive.location ? ` · ${escapeHtml(displayHiveLocation(hive.location))}` : ""}</small></div>
       <span class="badge">${statusLabel(hive.durum)}</span>
       <span class="hive-list-description">${descriptions[hive.durum]}</span>
       <span class="hive-list-time">${dateLabel(hive.timestamp)}</span>
@@ -456,7 +671,10 @@ function render(data) {
   if (selectedHiveId) renderHiveDetail();
   updatedEl.textContent = `${t("Son güncelleme")} ${dateLabel(data.generated_at)}`;
 
-  const critical = data.events.find(event => event.status === "ALARM");
+  // An alarm someone has already inspected is not an alarm any more. The alarms page has
+  // always counted only the open ones, so a closed alarm left the panel contradicting
+  // itself: the overview announced a hive in trouble while the alarms page listed none.
+  const critical = data.events.find(event => event.status === "ALARM" && !event.acknowledged_at);
   overviewAlert.hidden = !critical;
   if (critical) {
     overviewAlertTitle.textContent = currentLanguage === "en"
@@ -464,8 +682,14 @@ function render(data) {
       : `${hiveLabel(critical.hive_id)} dikkat istiyor`;
     overviewAlertCopy.textContent = t("Kalıcı akustik değişim algılandı. Fiziksel kontrol önerilir.");
   }
-  if (critical && critical.id !== lastCriticalId) {
-    lastCriticalId = critical.id;
+  const previousCriticalId = lastCriticalId;
+  lastCriticalId = critical ? critical.id : null;
+  // The first dashboard only records what was already open. An alarm raised before the
+  // panel was opened is history, not news, and announcing it made every start of the app
+  // sound like an emergency — with a toast and a sound for something the beekeeper may
+  // have dealt with days ago. The banner still shows it; the toast and the beep are for
+  // an alarm that arrives while someone is watching.
+  if (critical && previousCriticalId !== undefined && critical.id !== previousCriticalId) {
     alertEl.textContent = currentLanguage === "en"
       ? `${hiveLabel(critical.hive_id)}: Persistent acoustic change — inspect the hive and verify the queen's condition`
       : `${hiveLabel(critical.hive_id)}: Kalıcı akustik değişim — kovanı ve kraliçeyi kontrol edin`;
@@ -474,31 +698,80 @@ function render(data) {
   }
 }
 
+// A WATCH record is the moment the question "should I act?" is actually open, and the
+// retrieved notes were reaching only ALARM cards. Any non-normal row can open the notes
+// that fit it; the retriever needs no model, so this works with the local LLM switched off.
+const expandedEventGuidance = new Set();
+
 function renderEvents() {
   const filtered = latestEvents.filter(event =>
     (!selectedHiveId || event.hive_id === selectedHiveId) &&
     (eventFilter.value === "all" || event.status === eventFilter.value)
   );
-  eventsEl.innerHTML = filtered.length ? filtered.map(event => `
+  eventsEl.innerHTML = filtered.length ? filtered.map(event => {
+    const acknowledge = event.status !== "ALARM" ? ""
+      : event.acknowledged_at ? `<span class="acknowledged">${t("Kontrol edildi")}</span>`
+      : `<button class="ack-button" data-ack="${event.id}" type="button">${t("Kontrol edildi olarak işaretle")}</button>`;
+    const expanded = expandedEventGuidance.has(String(event.id));
+    const guidance = event.status === "NORMAL" ? "" : `<button class="event-guidance-toggle" data-event-guidance="${event.id}" type="button" aria-expanded="${String(expanded)}">${t("Kılavuz")}</button>`;
+    const actions = [acknowledge, guidance].filter(Boolean).join("") || "—";
+    return `
     <tr><td>${dateLabel(event.timestamp)}</td><td>${hiveLabel(event.hive_id)}</td>
     <td class="${event.status === "ALARM" ? "event-critical" : ""}">${t(event.status === "ALARM" ? "Alarm" : event.status === "WATCH" ? "İzle" : "Normal")}</td>
     <td>${Math.round(event.anomaly_fraction * 100)}%</td>
-    <td>${event.status !== "ALARM" ? "—" : event.acknowledged_at ? `<span class="acknowledged">${t("Kontrol edildi")}</span>` : `<button class="ack-button" data-ack="${event.id}" type="button">${t("Kontrol edildi olarak işaretle")}</button>`}</td></tr>`).join("") : `<tr><td colspan="5">${currentLanguage === "en" ? "No events match this filter." : "Filtreyle eşleşen olay yok."}</td></tr>`;
+    <td>${event.anomaly_severity == null ? "—" : Math.round(event.anomaly_severity * 100) + "%"}</td>
+    <td>${actions}</td></tr>
+    ${event.status === "NORMAL" ? "" : `<tr class="event-guidance-row" data-guidance-for="${event.id}"${expanded ? "" : " hidden"}><td colspan="6"><div class="event-guidance"></div></td></tr>`}`;
+  }).join("") : `<tr><td colspan="6">${currentLanguage === "en" ? "No events match this filter." : "Filtreyle eşleşen olay yok."}</td></tr>`;
+  expandedEventGuidance.forEach(eventId => fillEventGuidance(eventId));
+}
+
+async function fillEventGuidance(eventId) {
+  const row = eventsEl.querySelector(`[data-guidance-for="${eventId}"]`);
+  if (!row) return;
+  const slot = row.querySelector(".event-guidance");
+  const key = `${eventId}:${currentLanguage}`;
+  let notes = alarmGuidanceCache.get(key);
+  if (!notes) {
+    slot.innerHTML = `<p class="alarm-guidance-label">${t("YEREL KILAVUZ")}</p>`;
+    try {
+      const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/guidance?language=${currentLanguage}&limit=2`);
+      if (!response.ok) return;
+      notes = await response.json();
+      alarmGuidanceCache.set(key, notes);
+    } catch (error) {
+      return;
+    }
+  }
+  // A re-render while the request was in flight detaches the row it was meant for.
+  if (!slot.isConnected) return;
+  slot.innerHTML = notes.length
+    ? `<p class="alarm-guidance-label">${t("YEREL KILAVUZ")}</p><ul>${notes.map(note =>
+        // Same reasoning as the alarm card: the key is provenance, not field reading.
+        `<li><span>${escapeHtml(note.text)}</span></li>`).join("")}</ul>`
+    : `<p class="alarm-guidance-label">${t("Bu konuda not bulunamadı.")}</p>`;
 }
 
 function renderChart(events) {
   const svg = document.querySelector("#confidence-chart");
   const grid = [0, 25, 50, 75, 100].map(value => {
     const y = 195 - value * 1.7;
-    return `<line class="grid-line" x1="45" y1="${y}" x2="885" y2="${y}"/><text class="axis-label" x="5" y="${y + 4}">%${value}</text>`;
+    return `<line class="grid-line" x1="45" y1="${y}" x2="885" y2="${y}"/><text class="axis-label" x="5" y="${y + 4}">${pct(value)}</text>`;
   }).join("");
   const hiveIds = selectedHiveId ? [selectedHiveId] : latestHives.map(hive => hive.hive_id);
+  // The detail page chooses a period and a measurement; every other caller keeps the old
+  // behaviour of drawing the last dozen anomaly fractions.
+  const metric = selectedHiveId ? chartMetric() : "fraction";
+  const field = metric === "severity" ? "anomaly_severity" : "anomaly_fraction";
   const series = hiveIds.map(hiveId => {
-    const values = events.filter(event => event.hive_id === hiveId).slice(0, 12).reverse();
+    const scoped = selectedHiveId ? eventsInRange(events, hiveId) : events.filter(event => event.hive_id === hiveId);
+    // Severity is missing on records taken before the model reported it, and a gap is not
+    // a zero: those points are left out rather than drawn on the floor.
+    const values = scoped.filter(event => Number.isFinite(Number(event[field]))).slice(0, 40).reverse();
     if (!values.length) return "";
     const points = values.map((event, index) => {
       const x = values.length === 1 ? 465 : 55 + index * (820 / (values.length - 1));
-      return { x, y: 195 - event.anomaly_fraction * 170 };
+      return { x, y: 195 - Number(event[field]) * 170 };
     });
     const color = hiveColor(hiveId);
     return `<polyline class="chart-line" stroke="${color}" points="${points.map(point => `${point.x},${point.y}`).join(" ")}"/>${points.map(point => `<circle class="chart-point" fill="${color}" cx="${point.x}" cy="${point.y}" r="6"/>`).join("")}`;
@@ -506,20 +779,100 @@ function renderChart(events) {
   svg.innerHTML = grid + (series || `<text class="chart-empty" x="450" y="110">${t("Grafik için olay bekleniyor")}</text>`);
 }
 
+// How far back the chart looks, and which of the two measurements it draws. Both are
+// read from the controls rather than held in their own variables so a re-render after a
+// refresh cannot disagree with what the buttons show.
+function chartRange() { return document.querySelector("#chart-range").dataset.value || "24h"; }
+function chartMetric() { return document.querySelector("#chart-metric").dataset.value || "fraction"; }
+
+const RANGE_HOURS = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30};
+
+function eventsInRange(events, hiveId) {
+  const hours = RANGE_HOURS[chartRange()] || 24;
+  const since = Date.now() - hours * 3600 * 1000;
+  return events.filter(event => event.hive_id === hiveId && new Date(event.timestamp).getTime() >= since);
+}
+
+// The last event that carries a given field. A hive's newest record does not always hold
+// every measurement — severity is absent on anything recorded before the model reported
+// it — and showing "—" for a number that was measured an hour ago helps nobody.
+function latestWith(events, hiveId, field) {
+  return events.find(event => event.hive_id === hiveId && event[field] !== null && event[field] !== undefined);
+}
+
 function renderHiveDetail() {
   const hive = latestHives.find(item => item.hive_id === selectedHiveId);
   if (!hive) return;
+  const hiveEvents = latestEvents.filter(event => event.hive_id === hive.hive_id);
+  const openAlarm = hiveEvents.find(event => event.status === "ALARM" && !event.acknowledged_at);
+  const severityEvent = latestWith(latestEvents, hive.hive_id, "anomaly_severity");
+  const runEvent = latestWith(latestEvents, hive.hive_id, "consecutive_anomalies");
+
   document.querySelector("#detail-title").textContent = hiveLabel(hive.hive_id);
   const status = document.querySelector("#detail-status");
   status.textContent = statusLabel(hive.durum);
   status.style.setProperty("--status", colors[hive.durum]);
+
+  document.querySelector("#detail-meta").innerHTML = [
+    hive.location ? `<span>${escapeHtml(hive.location)}</span>` : "",
+    `<span>${t("Son sinyal")}: ${dateLabel(hive.timestamp)}</span>`,
+  ].filter(Boolean).join('<i aria-hidden="true">·</i>');
+
+  // The inspection is offered where the alarm is being read, not only on the alarms page.
+  document.querySelector("#detail-actions").innerHTML = openAlarm
+    ? `<button class="alarm-primary-button" data-alarm-ack="${openAlarm.id}" type="button">${ICON_CLIPBOARD}${t("Fiziksel kontrolü başlat")}</button>`
+    : "";
+
+  const banner = document.querySelector("#detail-banner");
+  banner.hidden = !openAlarm;
+  if (openAlarm) {
+    banner.innerHTML = `<span class="detail-banner-mark" aria-hidden="true">!</span>
+      <div><strong>${t("Kalıcı akustik değişim sürüyor")}</strong><p>${escapeHtml(alarmSummary(openAlarm))}</p></div>
+      <button class="alarm-secondary-link" data-open-alarms type="button">${t("Alarm kaydını incele")} <span aria-hidden="true">→</span></button>`;
+  }
+
+  const measured = value => value === null || value === undefined || !Number.isFinite(Number(value));
   document.querySelector("#detail-summary").innerHTML = `
-    <article><span>${t("Güncel durum")}</span><strong style="color:${colors[hive.durum]}">${statusLabel(hive.durum)}</strong></article>
-    <article><span>${t("Aykırı ses penceresi")}</span><strong>${hive.anomaly_fraction == null ? "—" : Math.round(hive.anomaly_fraction * 100) + "%"}</strong></article>
-    <article><span>${t("Son sinyal")}</span><strong>${dateLabel(hive.timestamp)}</strong></article>`;
+    <article class="detail-tile"><span>${t("Güncel durum")}</span><strong style="color:${colors[hive.durum]}">${statusLabel(hive.durum)}</strong><small>${t(openAlarm ? "Acil kontrol önerilir" : "Kovanın son kaydına göre")}</small></article>
+    <article class="detail-tile">${ICON_WAVE}<span>${t("Aykırı ses")}</span><strong>${measured(hive.anomaly_fraction) ? "—" : pct(Math.round(hive.anomaly_fraction * 100))}</strong><small>${t("Kaydın normal aralık dışında kalan bölümü")}</small></article>
+    <article class="detail-tile">${ICON_SEVERITY}<span>${t("Sapma şiddeti")}</span><strong>${severityEvent ? pct(Math.round(severityEvent.anomaly_severity * 100)) : t("Ölçülmedi")}</strong><small>${t("Sesin normal profilden uzaklığı")}</small></article>
+    <article class="detail-tile">${ICON_RUN}<span>${t("Kesintisiz değişim")}</span><strong>${runEvent ? `${runEvent.consecutive_anomalies} ${t("sn")}` : "—"}</strong><small>${t("Alarm eşiği 30 saniyedir")}</small></article>`;
+
+  const drawn = eventsInRange(latestEvents, hive.hive_id);
+  const metricLabel = chartMetric() === "severity" ? t("Sapma şiddeti") : t("Aykırı ses");
+  document.querySelector("#chart-caption").textContent = drawn.length
+    ? `${t(RANGE_CAPTION[chartRange()])} ${drawn.length} ${t("kayıt")} · ${metricLabel}`
+    : t("Bu dönemde kayıt yok");
   document.querySelector("#chart-legend").innerHTML = `<span style="--dot:${hiveColor(hive.hive_id)}">${hiveLabel(hive.hive_id)}</span>`;
   renderChart(latestEvents);
+  renderDetailPanels(hive, openAlarm, runEvent);
   renderEvents();
+}
+
+const RANGE_CAPTION = {"24h": "Son 24 saatte", "7d": "Son 7 günde", "30d": "Son 30 günde"};
+
+// Two panels the page was missing: what to do about the state it is showing, and what
+// produced that state. The steps are the same three the alarm card names, so a beekeeper
+// reading either surface is told the same sequence.
+function renderDetailPanels(hive, openAlarm, runEvent) {
+  const steps = openAlarm
+    ? ["Kovanı fiziksel olarak kontrol edin", "Kraliçe ve yavru düzenini doğrulayın", "Sonucu kaydedin"]
+    : hive.durum === "uyari"
+      ? ["Yeni bir ses kaydı alın", "Değişimin sürüp sürmediğine bakın", "Sürerse fiziksel kontrole geçin"]
+      : ["Rutin akustik izlemeye devam edin", "Kayıtları benzer saatlerde alın", "Mikrofonun yerini değiştirmeyin"];
+  document.querySelector("#detail-next-steps").innerHTML = `
+    <div class="detail-panel-head"><span class="detail-panel-icon" aria-hidden="true">${ICON_GUIDANCE}</span><h3>${t("Bu durumda ne yapmalı?")}</h3></div>
+    <ol class="detail-steps">${steps.map(step => `<li>${t(step)}</li>`).join("")}</ol>
+    <button class="alarm-secondary-link" data-open-guidance type="button">${t("Yerel kılavuzu aç")} <span aria-hidden="true">→</span></button>`;
+
+  const model = latestWith(latestEvents, hive.hive_id, "model");
+  document.querySelector("#detail-monitoring").innerHTML = `
+    <div class="detail-panel-head"><span class="detail-panel-icon" aria-hidden="true">${ICON_WAVE}</span><h3>${t("İzleme bilgisi")}</h3></div>
+    <dl class="detail-facts">
+      <div><dt>${t("Model")}</dt><dd>${model ? escapeHtml(model.model) : t("Kayıt yok")}</dd></div>
+      <div><dt>${t("Sesli alarm")}</dt><dd>${t(soundEnabled ? "Açık" : "Kapalı")}</dd></div>
+      <div><dt>${t("Kesintisiz değişim")}</dt><dd>${runEvent ? `${runEvent.consecutive_anomalies} / 30 ${t("sn")}` : "—"}</dd></div>
+    </dl>`;
 }
 
 function updateNavIndicator(activeButton = document.querySelector(".nav-button.active")) {
@@ -547,6 +900,7 @@ function showView(viewName, moveFocus = false) {
   updateNavIndicator(activeNavButton);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   window.scrollTo({top: 0, behavior: reduceMotion ? "auto" : "smooth"});
+  queueHoverSync();
   if (moveFocus) {
     const heading = activeView?.querySelector("h2");
     if (heading) {
@@ -557,21 +911,36 @@ function showView(viewName, moveFocus = false) {
   if (viewName === "hives") refreshManagedHives();
   if (viewName === "alarms") refreshAlarms();
   if (viewName === "status") refreshSystemStatus();
+  if (viewName === "exports") refreshExports();
   if (viewName === "settings") {
     loadSettings();
     refreshRecoveryState();
+    loadGuidanceNotes();
     if (managesAccounts && !workerPreview) refreshWorkers();
   }
-  // Remember the section so a reload returns here instead of the overview.
-  if (viewName !== "detail" && location.hash !== `#${viewName}`) {
-    history.replaceState(null, "", `#${viewName}`);
-  }
+  // Remember the section so a reload returns here instead of the overview. A hive detail
+  // names the hive it is showing, because "#detail" on its own could not be restored — so
+  // it used to leave the previous section in the address bar instead: opening a hive from
+  // a report left the page reading "#reports", and reloading went back to the reports.
+  const hash = viewName === "detail"
+    ? (selectedHiveId ? `#hive/${selectedHiveId}` : location.hash)
+    : `#${viewName}`;
+  if (location.hash !== hash) history.replaceState(null, "", hash);
 }
 
 const NAV_VIEWS = ["overview", "hives", "alarms", "reports", "exports", "status", "settings"];
 
 function restoreViewFromHash() {
   const requested = location.hash.replace("#", "");
+  const hive = requested.startsWith("hive/") ? requested.slice(5) : "";
+  // The same shape the API accepts, so a hand-edited address cannot put arbitrary text
+  // through the renderer. An id no hive has simply renders nothing until one arrives.
+  if (/^H[1-9][0-9]{0,2}$/.test(hive)) {
+    selectedHiveId = hive;
+    showView("detail");
+    renderHiveDetail();
+    return;
+  }
   if (NAV_VIEWS.includes(requested) && requested !== "overview") showView(requested);
 }
 
@@ -725,7 +1094,7 @@ async function analyzeSensorAudio() {
     ? `<p class="sensor-result-failed">${failed.length} ${t("kayıt gönderilemedi")}: ${escapeHtml(failed[0].reason)}</p>`
     : "";
   sensorResult.innerHTML = lastEvent
-    ? `<strong>${t("Analiz tamamlandı")}: ${t(lastEvent.status === "WATCH" ? "İzle" : lastEvent.status === "ALARM" ? "Alarm" : "Normal")}</strong><span>${t("Aykırı ses")}: %${Math.round(lastEvent.anomaly_fraction * 100)}</span><span>${t("Pencere")}: ${lastBody.windows}</span><span>${t("Kaynak")}: ${escapeHtml(lastBody.model)}</span><p>${t("Yeni olay panele ve SQLite’a kaydedildi.")}</p>${skipped}`
+    ? `<strong>${t("Analiz tamamlandı")}: ${t(lastEvent.status === "WATCH" ? "İzle" : lastEvent.status === "ALARM" ? "Alarm" : "Normal")}</strong><span>${t("Aykırı ses")}: ${pct(Math.round(lastEvent.anomaly_fraction * 100))}</span><span>${t("Pencere")}: ${lastBody.windows}</span><span>${t("Kaynak")}: ${escapeHtml(lastBody.model)}</span><p>${t("Yeni olay panele ve SQLite’a kaydedildi.")}</p>${skipped}`
     : `<strong>${sent.length} ${t("sağlıklı başlangıç kaydı")}</strong><span>${t("Pencere")}: ${lastBody.windows}</span><p>${enrollmentNote}</p>${skipped}`;
   sensorResult.dataset.status = lastEvent ? lastEvent.status.toLowerCase() : "enrollment";
   sensorResult.hidden = false;
@@ -874,6 +1243,65 @@ function selectSensorSource(source) {
   renderSensorQueue();
 }
 
+// The settings page holds four unrelated jobs. They are shown one at a time and the
+// sidebar carries what is true about each: how many guidance notes there are, whether the
+// account still has no recovery code, which apiary these settings belong to.
+function showSettingsTab(name) {
+  document.querySelectorAll("[data-settings-tab]").forEach(button =>
+    button.classList.toggle("is-active", button.dataset.settingsTab === name));
+  document.querySelectorAll("[data-settings-panel]").forEach(panel => {
+    panel.hidden = panel.dataset.settingsPanel !== name;
+  });
+}
+
+function renderSettingsSidebar() {
+  const apiary = document.querySelector("#settings-nav-apiary");
+  if (!apiary) return;
+  apiary.textContent = currentSettings?.location_name || currentSettings?.panel_name || "—";
+  const hives = latestHives.length;
+  document.querySelector("#settings-nav-hives").textContent = hives ? `${hives} ${t("kovan")}` : "";
+  const count = document.querySelectorAll("#guidance-list li").length;
+  document.querySelector("#settings-guidance-count").textContent = count ? `${count} ${t("not")}` : "";
+  // Staff accounts exist only for the account that manages them; an empty tab would be a
+  // door onto nothing.
+  const team = document.querySelector("#settings-tab-team");
+  if (team) team.hidden = !managesAccounts || workerPreview;
+}
+
+// A recovery code that was never generated is the one setting worth pointing at: without
+// it a forgotten password is a command-line recovery. The badge is state, not decoration,
+// so it disappears the moment a code exists.
+function markSecurityRecommended(needed) {
+  const badge = document.querySelector("#settings-security-badge");
+  if (badge) badge.hidden = !needed;
+}
+
+function setSettingsState(state) {
+  const line = document.querySelector("#settings-state");
+  if (!line) return;
+  line.className = `settings-state${state ? ` is-visible is-${state}` : ""}`;
+  line.textContent = state === "dirty" ? t("Kaydedilmemiş değişiklikler var")
+    : state === "saved" ? t("Tüm değişiklikler kaydedildi") : "";
+}
+
+function markSettingsSaved() { setSettingsState("saved"); }
+function markSettingsDirty() { setSettingsState("dirty"); }
+
+// Five fixed choices read faster as one row than as a menu that has to be opened. The
+// select stays the source of truth so the form still submits and loads the same way.
+function syncRefreshSegments() {
+  const select = document.querySelector("#settings-refresh");
+  const group = document.querySelector("#settings-refresh-segments");
+  if (!select || !group) return;
+  group.innerHTML = [...select.options].map(option =>
+    `<button type="button" data-refresh="${escapeHtml(option.value)}"${option.value === select.value ? ' class="is-active"' : ""} aria-pressed="${option.value === select.value}">${escapeHtml(option.textContent)}</button>`).join("");
+  group.querySelectorAll("[data-refresh]").forEach(button => button.addEventListener("click", () => {
+    select.value = button.dataset.refresh;
+    syncRefreshSegments();
+    markSettingsDirty();
+  }));
+}
+
 function applySettings(settings) {
   currentSettings = settings;
   currentLanguage = settings.language || "tr";
@@ -884,10 +1312,24 @@ function applySettings(settings) {
   document.title = `${settings.panel_name} | ${t("Kovan İzleme")}`;
   document.querySelector("#settings-panel-name").value = settings.panel_name;
   document.querySelector("#settings-location").value = settings.location_name;
+  document.querySelector("#settings-latitude").value = settings.latitude;
+  document.querySelector("#settings-longitude").value = settings.longitude;
   document.querySelector("#settings-sound").checked = settings.sound_enabled;
   document.querySelector("#settings-weather").checked = settings.weather_enabled;
   document.querySelector("#settings-refresh").value = String(settings.refresh_seconds);
   document.querySelector("#settings-language").value = currentLanguage;
+  syncRefreshSegments();
+  // What is on screen is now what is stored, so the page says so and stops until the next
+  // edit. Announcing "saved" while a field is still being typed into would be a lie.
+  markSettingsSaved();
+  renderSettingsSidebar();
+  // The guide's progress is a single stored flag, not a per-step tally: the panel records
+  // that it was finished, never how far through it someone got. Saying "4 of 6 done" would
+  // be reporting a measurement nobody takes.
+  const steps = document.querySelectorAll("#onboarding-dialog .onboarding-steps article").length;
+  document.querySelector("#guide-state").textContent = settings.onboarding_completed
+    ? `${steps} ${t("adım")} · ${t("tamamlandı")}`
+    : `${steps} ${t("adım")} · ${t("henüz tamamlanmadı")}`;
   translatePage();
   clearInterval(refreshTimer);
   refreshTimer = setInterval(refresh, refreshSeconds * 1000);
@@ -901,13 +1343,100 @@ async function loadSettings(showGuide = false) {
   if (showGuide && !settings.onboarding_completed) openGuide();
 }
 
+// The guide shows one step at a time, so it has a cursor. Reopening it starts at the
+// first step rather than resuming: the panel stores that the guide was finished, never
+// how far through it someone got, and resuming from a position nobody recorded would be
+// guessing.
+let guideStep = 1;
+
+function guideSteps() {
+  return [...document.querySelectorAll("#onboarding-dialog .onboarding-steps article")];
+}
+
+function renderGuide() {
+  const steps = guideSteps();
+  const total = steps.length;
+  guideStep = Math.min(Math.max(guideStep, 1), total);
+  steps.forEach(step => { step.hidden = Number(step.dataset.step) !== guideStep; });
+  document.querySelectorAll("#onboarding-rail li").forEach(item => {
+    const index = Number(item.dataset.rail);
+    item.toggleAttribute("data-done", index < guideStep);
+    item.toggleAttribute("data-current", index === guideStep);
+    // The connector arriving at a step is filled once the step it leaves has been reached,
+    // so the rail reads as travel between two dots rather than as a fifth state.
+    item.toggleAttribute("data-line", index - 1 <= guideStep);
+  });
+  document.querySelectorAll(".onboarding-orbit").forEach(orbit => {
+    orbit.classList.toggle("is-active", Number(orbit.dataset.orbit) === guideStep);
+  });
+  document.querySelector("#guide-back").disabled = guideStep === 1;
+  const label = document.querySelector("#guide-next-label");
+  // Written in Turkish and handed to the translator, so switching language later still
+  // finds a source string to translate rather than an already-translated one.
+  label.textContent = guideStep === total ? "Anladım, panele geç" : "Devam et";
+  translatePage(label);
+}
+
+function focusGuideStep() {
+  const active = guideSteps().find(step => !step.hidden);
+  const field = active?.querySelector("input");
+  if (field) { field.focus(); return; }
+  const heading = active?.querySelector("h3");
+  if (!heading) return;
+  heading.tabIndex = -1;
+  heading.focus({preventScroll: true});
+}
+
 function openGuide() {
   const dialog = document.querySelector("#onboarding-dialog");
+  guideStep = 1;
+  renderGuide();
   if (!dialog.open) dialog.showModal();
 }
 
 function closeGuide() {
   document.querySelector("#onboarding-dialog").close();
+}
+
+function advanceGuide() {
+  if (guideStep < guideSteps().length) {
+    guideStep += 1;
+    renderGuide();
+    focusGuideStep();
+    return;
+  }
+  completeGuide();
+}
+
+function retreatGuide() {
+  if (guideStep === 1) return;
+  guideStep -= 1;
+  renderGuide();
+  focusGuideStep();
+}
+
+// The first step asks for a hive name and location but does not create anything: the
+// guide is a guide. What is typed is carried into the real hive form, where saving stays
+// an explicit act, so the fields are neither dead nor quietly writing to the database.
+function carryHiveDraft() {
+  const nameField = document.querySelector("#guide-hive-name");
+  const locationField = document.querySelector("#guide-hive-location");
+  const name = nameField.value.trim();
+  const location = locationField.value.trim();
+  nameField.value = "";
+  locationField.value = "";
+  if (!name && !location) return;
+  showView("hives", true);
+  resetHiveForm();
+  hiveForm.hidden = false;
+  document.querySelector("#hive-name").value = name;
+  document.querySelector("#hive-location").value = location;
+  document.querySelector("#hive-name").focus();
+}
+
+function skipGuide() {
+  closeGuide();
+  carryHiveDraft();
 }
 
 async function completeGuide() {
@@ -919,18 +1448,30 @@ async function completeGuide() {
   });
   if (response.ok) applySettings(await response.json());
   closeGuide();
+  carryHiveDraft();
 }
 
 async function toggleLanguage() {
   if (!currentSettings) return;
   const language = currentLanguage === "tr" ? "en" : "tr";
-  const response = await fetch("/api/settings", {
-    method: "PUT",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({...currentSettings, language}),
-  });
-  if (!response.ok) return;
-  applySettings(await response.json());
+  // The stored language belongs to the panel, and only the owner may write it. A field
+  // worker pressing this got a 403 that was thrown away without a word, so the button did
+  // nothing at all — the one control on the header that simply failed in silence. Reading
+  // the panel in the other language costs the server nothing, so the refusal turns into a
+  // local switch instead, remembered the same way the sign-in screen remembers it.
+  const response = currentRole === "owner"
+    ? await fetch("/api/settings", {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({...currentSettings, language}),
+      })
+    : null;
+  if (response && response.ok) {
+    applySettings(await response.json());
+  } else {
+    localStorage.setItem("waggle-language", language);
+    applySettings({...currentSettings, language});
+  }
   ["#hive-form-message", "#device-message", "#health-confirmation-message", "#sensor-message", "#settings-message"].forEach(selector => {
     const element = document.querySelector(selector);
     if (element) element.textContent = "";
@@ -953,6 +1494,10 @@ async function saveSettings(event) {
       body: JSON.stringify({
         panel_name: form.panel_name.value.trim(),
         location_name: form.location_name.value.trim(),
+        // The place the weather is asked about, beside the name it is labelled with. The
+        // two were allowed to drift: the name was editable here and the position was not.
+        latitude: Number(form.latitude.value),
+        longitude: Number(form.longitude.value),
         alarm_threshold: currentSettings?.alarm_threshold || 0.85,
         sound_enabled: form.sound_enabled.checked,
         refresh_seconds: Number(form.refresh_seconds.value),
@@ -972,30 +1517,192 @@ async function saveSettings(event) {
   }
 }
 
+// How late a component is, in the words a person uses. The page used to say "son olay
+// beklenen süreden eski", which names neither the delay nor the expectation.
+function lagLabel(component) {
+  if (!component.last_seen_at) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(component.last_seen_at).getTime()) / 1000));
+  const minutes = Math.round(seconds / 60);
+  const elapsed = minutes < 60
+    ? `${minutes} ${t("dakika")}`
+    : minutes < 1440 ? `${Math.round(minutes / 60)} ${t("saat")}` : `${Math.round(minutes / 1440)} ${t("gün")}`;
+  if (component.status === "ok" || !component.stale_after_seconds) return `${t("Son veri")}: ${elapsed} ${t("önce")}`;
+  const limit = Math.round(component.stale_after_seconds / 60);
+  const expected = limit < 60 ? `${limit} ${t("dakika")}` : limit < 1440 ? `${Math.round(limit / 60)} ${t("saat")}` : `${Math.round(limit / 1440)} ${t("gün")}`;
+  return `${elapsed} ${t("gecikti")} · ${t("beklenen aralık")} ${expected}`;
+}
+
+// A mark per stage of the chain. Drawn rather than lettered because the row is scanned,
+// not read: the shape says which link of the chain this is before the label is reached.
+const STAGE_MARKS = {
+  device: '<path d="M5 10.5 12 6l7 4.5"></path><rect x="6" y="10.5" width="12" height="8" rx="1.4"></rect><path d="M9 14.5h6"></path><path d="M8.4 5.2a5 5 0 0 1 7.2 0M10.4 3.2a8 8 0 0 1 3.2 0"></path>',
+  "acoustic-model": '<path d="M4 12h1.6M8 8.2v7.6M11.4 5.6v12.8M14.8 8.8v6.4M18.2 10.6v2.8M20.6 12H22"></path>',
+  database: '<ellipse cx="12" cy="6.4" rx="6.6" ry="2.7"></ellipse><path d="M5.4 6.4v11.2c0 1.5 3 2.7 6.6 2.7s6.6-1.2 6.6-2.7V6.4"></path><path d="M5.4 12c0 1.5 3 2.7 6.6 2.7s6.6-1.2 6.6-2.7"></path>',
+  reports: '<path d="M6.5 4h7l4 4v12h-11Z"></path><path d="M13.5 4v4h4"></path><path d="m10.5 12.6.9-2 .9 2 2 .9-2 .9-.9 2-.9-2-2-.9Z"></path>',
+  panel: '<rect x="3.4" y="5" width="17.2" height="11.4" rx="1.8"></rect><path d="M9 20h6M12 16.4V20"></path><path d="M7.4 12.6v-2M10.6 12.6V9M13.8 12.6v-3.4M17 12.6V8"></path>',
+};
+
+function renderStatusChain(components) {
+  const chain = document.querySelector("#status-chain");
+  chain.innerHTML = components.map((component, index) => {
+    // A stage that is not producing hands nothing on, so the break is drawn on its
+    // outgoing link. Stages after it keep their own colour: a panel that is running is
+    // running even when nothing is reaching it.
+    const link = index < components.length - 1
+      ? `<span class="status-link${component.status === "ok" ? "" : " is-broken"}" aria-hidden="true"><i></i></span>`
+      : "";
+    return `<li>
+      <span class="status-stage ${component.status}" data-stage="${component.key}">
+        <span class="status-stage-mark" aria-hidden="true"><svg viewBox="0 0 24 24">${STAGE_MARKS[component.key] || ""}</svg></span>
+        <strong>${escapeHtml(td(component.name))}</strong>
+        <span>${escapeHtml(td(component.summary))}</span>
+      </span>${link}
+    </li>`;
+  }).join("");
+
+  const counts = {ok: 0, waiting: 0, warning: 0};
+  components.forEach(component => { counts[component.status] += 1; });
+  const parts = [];
+  if (counts.ok) parts.push(`<span><i class="ok"></i>${counts.ok} ${t("sağlıklı")}</span>`);
+  if (counts.waiting) parts.push(`<span><i class="waiting"></i>${counts.waiting} ${t("veri bekliyor")}</span>`);
+  if (counts.warning) parts.push(`<span><i class="warning"></i>${counts.warning} ${t("kontrol gerekli")}</span>`);
+  // Worth saying on a page about connections: none of these checks leave the building.
+  parts.push(`<span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 5.8v6.1c0 4-2.8 7.3-7 9-4.2-1.7-7-5-7-9V5.8Z"></path><path d="m9.2 11.9 2.2 2.2 3.6-4.1"></path></svg>${t("Kontroller yerel ağda çalışır")}</span>`);
+  document.querySelector("#status-tally").innerHTML = parts.join("");
+}
+
+// The pointer is placed from the stage's own box rather than from a column count, so it
+// stays on target when the labels change length or the row wraps to the narrow layout.
+function anchorStatusDetails() {
+  const field = document.querySelector("#status-chain");
+  const detail = document.querySelector("#status-detail");
+  if (!field || !detail) return;
+  detail.querySelectorAll("[data-anchor]").forEach(card => {
+    const stage = field.querySelector(`[data-stage="${card.dataset.anchor}"]`);
+    if (!stage) return;
+    const offset = stage.getBoundingClientRect().left + stage.getBoundingClientRect().width / 2
+      - card.getBoundingClientRect().left;
+    card.style.setProperty("--anchor", `${Math.round(offset)}px`);
+  });
+}
+
+async function toggleContactHistory(button) {
+  const card = button.closest(".status-detail-card");
+  const existing = card.querySelector(".status-history, .status-history-empty");
+  if (existing) {
+    existing.remove();
+    button.textContent = t("Bağlantı geçmişi");
+    return;
+  }
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/system-status/${button.dataset.history}/history?limit=12`);
+    if (!response.ok) throw new Error(t("Bağlantı geçmişi alınamadı"));
+    const entries = (await response.json()).entries || [];
+    // "Cihaz verisi gecikiyor" is a claim about a pattern; an hour of silence after months
+    // of hourly contact is a different problem from a device that was always sporadic.
+    card.insertAdjacentHTML("beforeend", entries.length
+      ? `<ul class="status-history">${entries.map(entry =>
+          `<li><i class="${escapeHtml(entry.status)}"></i><time>${dateLabel(entry.at)}</time><span>${escapeHtml(td(entry.label))}</span></li>`).join("")}</ul>`
+      : `<p class="status-history-empty">${t("Bu bileşenden henüz hiç kayıt ulaşmadı.")}</p>`);
+    button.textContent = t("Geçmişi gizle");
+  } catch (error) {
+    card.insertAdjacentHTML("beforeend", `<p class="status-history-empty">${escapeHtml(error.message)}</p>`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// How late a component is, in the words a person uses. The page used to say "son olay
+// beklenen süreden eski", which names neither the delay nor the expectation.
+function lagLabel(component) {
+  if (!component.last_seen_at) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(component.last_seen_at).getTime()) / 1000));
+  const minutes = Math.round(seconds / 60);
+  const elapsed = minutes < 60
+    ? `${minutes} ${t("dakika")}`
+    : minutes < 1440 ? `${Math.round(minutes / 60)} ${t("saat")}` : `${Math.round(minutes / 1440)} ${t("gün")}`;
+  if (component.status === "ok" || !component.stale_after_seconds) return `${t("Son veri")}: ${elapsed} ${t("önce")}`;
+  const limit = Math.round(component.stale_after_seconds / 60);
+  const expected = limit < 60 ? `${limit} ${t("dakika")}` : limit < 1440 ? `${Math.round(limit / 60)} ${t("saat")}` : `${Math.round(limit / 1440)} ${t("gün")}`;
+  return `${elapsed} ${t("gecikti")} · ${t("beklenen aralık")} ${expected}`;
+}
+
 function renderSystemStatus(data) {
   const overview = document.querySelector("#status-overview");
   overview.className = `status-overview ${data.overall}`;
   overview.innerHTML = `<span class="status-pulse"></span><div><strong>${t(data.overall === "ok" ? "Tüm sistemler çalışıyor" : "Sistem çalışıyor, bazı bağlantılar veri bekliyor")}</strong><p>${t(data.overall === "ok" ? "Panel ve bütün entegrasyonlar güncel veri üretiyor." : "Bekleyen bileşenlerin ayrıntılarını aşağıda görebilirsiniz.")}</p></div>`;
+  renderStatusChain(data.components);
+
   const statusLabels = {ok: "Çalışıyor", waiting: "Veri bekleniyor", warning: "Kontrol gerekli"};
-  document.querySelector("#status-components").innerHTML = data.components.map(component => `
-    <article class="status-card ${component.status}">
-      <span class="component-dot" aria-hidden="true"></span>
-      <div><div class="status-card-title"><h3>${escapeHtml(td(component.name))}</h3><span>${t(statusLabels[component.status])}</span></div><strong>${escapeHtml(td(component.summary))}</strong><p>${escapeHtml(td(component.detail))}</p>${component.last_seen_at ? `<small>${t("Son bağlantı")}: ${dateLabel(component.last_seen_at)}</small>` : ""}</div>
-    </article>`).join("");
+  // Only what needs attention gets a card, hanging from the stage it is about. The healthy
+  // stages have already said everything they have to say in the chain above.
+  const needsAttention = data.components.filter(component => component.status !== "ok");
+  document.querySelector("#status-detail").innerHTML = needsAttention.map(component => {
+    const lag = lagLabel(component);
+    const remedies = (component.remedies || []).length
+      ? `<p class="status-remedy-title">${t("Sorun giderme adımları")}</p><ul class="status-remedies">${component.remedies.map(step => `<li>${escapeHtml(td(step))}</li>`).join("")}</ul>`
+      : "";
+    const history = component.has_history
+      ? `<button class="status-history-toggle" type="button" data-history="${escapeHtml(component.key)}">${t("Bağlantı geçmişi")}</button>`
+      : "";
+    return `<article class="status-detail-card ${component.status}" data-anchor="${escapeHtml(component.key)}">
+      <div class="status-detail-head"><h4>${escapeHtml(td(component.summary))}</h4><span class="status-detail-state">${t(statusLabels[component.status])}</span></div>
+      <p>${escapeHtml(td(component.detail))}</p>
+      ${lag ? `<span class="status-lag">${escapeHtml(lag)}</span>` : ""}
+      ${component.last_seen_at ? `<small>${t("Son bağlantı")}: ${dateLabel(component.last_seen_at)}</small>` : ""}
+      ${remedies}
+      ${history}
+    </article>`;
+  }).join("");
+
+  document.querySelector("#status-components").innerHTML = needsAttention.length ? "" :
+    `<article class="status-all-clear"><span class="component-dot" aria-hidden="true" style="background:#1c8a5f;box-shadow:0 0 0 5px rgba(28,138,95,.12)"></span>
+      <div><strong>${t("Zincirin tamamı çalışıyor")}</strong><p>${t("Kayıtlar mikrofondan panele kadar kesintisiz ulaşıyor; yapılacak bir şey yok.")}</p></div></article>`;
+
+  document.querySelector("#status-detail").querySelectorAll("[data-history]")
+    .forEach(button => button.addEventListener("click", () => toggleContactHistory(button)));
+  anchorStatusDetails();
+
   document.querySelector("#status-updated").textContent = `${t("Son kontrol")}: ${dateLabel(data.generated_at)}`;
   const header = document.querySelector(".connection");
   header.classList.toggle("attention", data.overall !== "ok");
   header.querySelector(".connection-label").textContent = t(data.overall === "ok" ? "Sistem bağlı" : "Sistem çalışıyor");
 }
 
+window.addEventListener("resize", anchorStatusDetails);
+
+// Written in Turkish and handed to the translator, so a later language switch still finds
+// a source string on the button rather than an already-translated one.
+function setStatusButtonLabel(button, turkish) {
+  button.textContent = turkish;
+  translatePage(button);
+}
+
+let statusCheckedTimer = 0;
+
 async function refreshSystemStatus() {
   const button = document.querySelector("#refresh-status");
+  // On a local panel the check answers in a few milliseconds, so a spinner is gone before
+  // anyone sees it and the page it redraws usually looks identical to the one before —
+  // which is why pressing this read as pressing nothing. The confirmation afterwards is
+  // the part worth showing, so the button holds it long enough to be read.
+  clearTimeout(statusCheckedTimer);
+  button.classList.remove("is-done");
   button.disabled = true;
+  setStatusButtonLabel(button, "Kontrol ediliyor…");
   try {
     const response = await fetch("/api/system-status");
     if (!response.ok) throw new Error(t("Sistem durumu alınamadı"));
     renderSystemStatus(await response.json());
+    button.classList.add("is-done");
+    setStatusButtonLabel(button, "Güncellendi");
+    statusCheckedTimer = setTimeout(() => {
+      button.classList.remove("is-done");
+      setStatusButtonLabel(button, "Şimdi kontrol et");
+    }, 2200);
   } catch (error) {
+    setStatusButtonLabel(button, "Şimdi kontrol et");
     document.querySelector("#status-overview").innerHTML = `<span class="status-pulse"></span><div><strong>${t("Durum alınamadı")}</strong><p>${escapeHtml(error.message)}</p></div>`;
   } finally {
     button.disabled = false;
@@ -1047,7 +1754,7 @@ function enrollmentBlock(hive) {
       <div class="enrollment-card training">
         <div class="enrollment-head">
           <div><strong>${t("Model eğitiliyor")}</strong><span>${t("Toplanan kayıtlardan kovana özel akustik profil çıkarılıyor.")}</span></div>
-          <div class="enrollment-percent"><strong data-count-to="100" data-count-from="${from}">%${from}</strong></div>
+          <div class="enrollment-percent"><strong data-count-to="100" data-count-from="${from}">${pct(from)}</strong></div>
         </div>
         <div class="enrollment-track filling"><span style="--from:${from}%"></span></div>
       </div>`;
@@ -1103,7 +1810,7 @@ function enrollmentBlock(hive) {
     <div class="enrollment-card ${tone}">
       <div class="enrollment-head">
         <div><strong>${heading}</strong><span>${note}</span></div>
-        <div class="enrollment-percent"><strong>%${status.progress_percent}</strong>${action}</div>
+        <div class="enrollment-percent"><strong>${pct(status.progress_percent)}</strong>${action}</div>
       </div>
       <div class="enrollment-track"><span style="width:${Math.max(status.progress_percent, 2)}%"></span></div>
       ${steps}
@@ -1119,7 +1826,7 @@ function renderManagedHives() {
     const enrollment = enrollmentBlock(hive);
     return `
     <article class="managed-hive-row ${hive.active ? "" : "archived"}${enrollment ? " has-enrollment" : ""}" data-hive-row="${hive.hive_id}">
-      <div class="managed-hive-identity"><span class="managed-hive-icon hive-tone-${index % 3}" aria-hidden="true"><svg viewBox="0 0 54 54"><path class="hive-roof" d="M15 17.5 21 11h12l6 6.5"></path><path class="hive-body" d="M14.5 18h25l3 6.5-2.7 6 1.5 6.5-4.8 6H17.5l-4.8-6 1.5-6.5-2.7-6 3-6.5Z"></path><path class="hive-band" d="M13 24.5h28M14.2 30.5h25.6M13.3 37h27.4"></path><path class="hive-feet" d="M18 43v3M36 43v3"></path><ellipse class="hive-door" cx="27" cy="38.5" rx="4.2" ry="4.8"></ellipse><path class="hive-bee-flight" d="M42 16c3-3 5 .4 2.7 2.3"></path><circle class="hive-bee-dot" cx="45.5" cy="14.5" r="1.4"></circle></svg></span><div><strong>${escapeHtml(displayHiveName(hive.name))}</strong><span>${hive.location ? escapeHtml(t(hive.location)) : t("Konum belirtilmedi")}</span></div></div>
+      <div class="managed-hive-identity"><span class="managed-hive-icon hive-tone-${index % 3}" aria-hidden="true"><svg viewBox="0 0 54 54"><path class="hive-roof" d="M15 17.5 21 11h12l6 6.5"></path><path class="hive-body" d="M14.5 18h25l3 6.5-2.7 6 1.5 6.5-4.8 6H17.5l-4.8-6 1.5-6.5-2.7-6 3-6.5Z"></path><path class="hive-band" d="M13 24.5h28M14.2 30.5h25.6M13.3 37h27.4"></path><path class="hive-feet" d="M18 43v3M36 43v3"></path><ellipse class="hive-door" cx="27" cy="38.5" rx="4.2" ry="4.8"></ellipse><path class="hive-bee-flight" d="M42 16c3-3 5 .4 2.7 2.3"></path><circle class="hive-bee-dot" cx="45.5" cy="14.5" r="1.4"></circle></svg></span><div data-user-text><strong>${escapeHtml(displayHiveName(hive.name))}</strong><span>${hive.location ? escapeHtml(displayHiveLocation(hive.location)) : t("Konum belirtilmedi")}</span></div></div>
       <div class="managed-hive-meta"><code>${hive.hive_id}</code><span class="managed-hive-state">${t(!hive.active ? "Arşivlendi" : status && !status.can_monitor ? "Öğrenme sürüyor" : "İzleme etkin")}</span></div>
       <div class="managed-hive-actions">
         ${hive.active ? `<button class="manage-device-button" data-manage-device="${hive.hive_id}" type="button"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M4 6.5h12M4 10h12M4 13.5h7M14 12l2 2-2 2"></path></svg>${t("Cihazlar ve model")}</button><button class="edit-hive-button" data-edit-hive="${hive.hive_id}" type="button"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 14.8.5-3.2 7.8-7.8 2.9 2.9-7.8 7.8-3.4.3Z"></path></svg>${t("Düzenle")}</button><button class="archive-button" data-archive-hive="${hive.hive_id}" type="button"><span class="archive-warning-dot" aria-hidden="true"></span>${t("Pasif hâle getir")}</button>` : `<button class="restore-hive-button" data-restore-hive="${hive.hive_id}" type="button">${t("Yeniden etkinleştir")}</button><button class="delete-hive-button" data-delete-hive="${hive.hive_id}" type="button"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M4 6h12M8 6V4.5h4V6M6 6l.8 9.5h6.4L14 6M8.5 9v4M11.5 9v4"></path></svg>${t("Kalıcı olarak sil")}</button>`}
@@ -1136,13 +1843,13 @@ function startPercentCounters() {
   managedHives.querySelectorAll("[data-count-to]").forEach(element => {
     const from = Number(element.dataset.countFrom) || 0;
     const to = Number(element.dataset.countTo) || 100;
-    if (reduceMotion || to <= from) { element.textContent = `%${to}`; return; }
+    if (reduceMotion || to <= from) { element.textContent = pct(to); return; }
     const started = performance.now();
     const duration = 6800;
     const step = now => {
       const ratio = Math.min((now - started) / duration, 1);
       const eased = 1 - Math.pow(1 - ratio, 3);
-      element.textContent = `%${Math.round(from + (to - from) * eased)}`;
+      element.textContent = pct(Math.round(from + (to - from) * eased));
       if (ratio < 1 && element.isConnected) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -1209,6 +1916,7 @@ async function refreshRecoveryState() {
       : t("Bu hesapta henüz kurtarma kodu yok.");
     state.classList.toggle("configured", status.configured);
     button.textContent = status.configured ? t("Yeni kod üret") : t("Kurtarma kodu üret");
+    markSecurityRecommended(!status.configured);
   } catch (error) {
     // 409 is the built-in demo account: it lives in the environment and has no database
     // row to keep a code in. Anything else is a failed request, and saying "this account
@@ -1423,6 +2131,7 @@ function setWorkerPreview(active) {
   document.body.classList.toggle("preview-as-worker", active);
   document.querySelector("#worker-preview-banner").hidden = !active;
   document.querySelector("#workers-section").hidden = !managesAccounts || active;
+  renderSettingsSidebar();
   const button = document.querySelector("#preview-as-worker");
   if (button) button.textContent = active ? t("Önizlemeden çık") : t("Çalışan gözüyle bak");
 }
@@ -1510,7 +2219,7 @@ async function openDevicePanel(hiveId, {scroll = true} = {}) {
   document.querySelector("#device-panel-title").textContent = `${displayHiveName(hive?.name || hiveId)} · ${hiveId}`;
   const labels = {device_required: "Cihaz bekleniyor", enrolling: "Öğrenme devam ediyor", ready: "Profil hazır", monitoring: "İzleme etkin"};
   document.querySelector("#enrollment-status").innerHTML = `
-    <div><strong>${t(labels[managedEnrollment.state])}</strong><span>%${managedEnrollment.progress_percent}</span></div>
+    <div><strong>${t(labels[managedEnrollment.state])}</strong><span>${pct(managedEnrollment.progress_percent)}</span></div>
     <progress max="100" value="${managedEnrollment.progress_percent}"></progress>
     ${managedEnrollment.can_monitor
       ? `<p>${t("Bu kovanın profili hazır; yeni kayıtlar izleme ve alarm akışında değerlendirilir.")}</p>`
@@ -1637,29 +2346,66 @@ function resetHiveForm() {
   document.querySelector("#hive-form-message").textContent = "";
 }
 
-async function startDemo() {
-  demoButton.disabled = true;
-  demoButton.textContent = t("Demo hazırlanıyor…");
-  try {
-    const response = await fetch("/api/demo", { method: "POST" });
-    if (!response.ok) throw new Error(t("Demo başlatılamadı"));
-    await refresh();
-  } finally {
-    demoButton.disabled = false;
-    demoButton.textContent = t("Demo senaryosunu başlat");
-  }
+// A browser re-evaluates :hover only when the pointer next moves. A card that slides under
+// a stationary cursor — the smooth scroll after a view switch, a refresh that changes the
+// card's height — therefore stays unlit until the mouse twitches, which reads as "sometimes
+// the hover just doesn't work". Tracking the pointer and re-checking after those moments
+// closes the gap; the CSS :hover rule still does the work whenever the pointer does move.
+const HOVER_SYNC_SELECTOR = ".weather-card";
+let pointerPosition = null;
+let hoverSyncFrame = null;
+
+function syncPointerHover() {
+  const under = pointerPosition
+    ? document.elementFromPoint(pointerPosition.x, pointerPosition.y)
+    : null;
+  document.querySelectorAll(HOVER_SYNC_SELECTOR).forEach((element) => {
+    element.classList.toggle("is-lit", Boolean(under) && element.contains(under));
+  });
+}
+
+function queueHoverSync() {
+  if (hoverSyncFrame) return;
+  hoverSyncFrame = requestAnimationFrame(() => {
+    hoverSyncFrame = null;
+    syncPointerHover();
+  });
+}
+
+document.addEventListener("pointermove", (event) => {
+  pointerPosition = {x: event.clientX, y: event.clientY};
+}, {passive: true});
+document.addEventListener("pointerleave", () => {
+  pointerPosition = null;
+  syncPointerHover();
+});
+window.addEventListener("scroll", queueHoverSync, {passive: true});
+// Measured: this browser keeps the hover state it had before a layout shift. An element the
+// page pushes *under* a still cursor therefore never lights up, which is the intermittent
+// part — it depends on whether the content above happened to finish loading first.
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(queueHoverSync).observe(document.body);
 }
 
 function renderWeather(weather) {
   document.querySelector("#weather-location").textContent = weather.location;
   document.querySelector("#weather-temp").textContent = `${Math.round(weather.temperature_c)}°`;
-  document.querySelector("#weather-details").innerHTML = `<span>${t("Nem")} %${weather.humidity_percent}</span><span>${t("Rüzgâr")} ${Math.round(weather.wind_kmh)} km/h</span>`;
+  document.querySelector("#weather-details").innerHTML = `<span>${t("Nem")} ${pct(weather.humidity_percent)}</span><span>${t("Rüzgâr")} ${Math.round(weather.wind_kmh)} km/h</span>`;
+  queueHoverSync();
 }
 
 function renderWeatherDisabled() {
   document.querySelector("#weather-location").textContent = t("Çevrimiçi hava durumu kapalı");
   document.querySelector("#weather-temp").textContent = "—";
   document.querySelector("#weather-details").innerHTML = `<span>${t("Temel kovan izleme internet olmadan çalışmaya devam eder.")}</span>`;
+  queueHoverSync();
+}
+
+function renderWeatherUnavailable() {
+  document.querySelector("#weather-location").textContent = t("Hava durumu alınamadı");
+  document.querySelector("#weather-temp").textContent = "—";
+  document.querySelector("#weather-details").innerHTML = `<span>${t("Servise ulaşılamıyor. Kovan izleme bundan etkilenmez; kayıtlara hava bilgisi eklenmez.")}</span>`;
+  queueHoverSync();
 }
 
 function reportTypeLabel(type) { return t(type === "event" ? "Olay" : type === "daily" ? "Günlük" : "Haftalık"); }
@@ -1705,9 +2451,9 @@ function renderReportCharts(report) {
   const alarmCount = events.filter(event => event.status === "ALARM").length;
   const alarmRate = events.length ? alarmCount / events.length : 0;
   document.querySelector("#report-event-count").textContent = events.length;
-  document.querySelector("#report-average-anomaly").textContent = `%${Math.round(average * 100)}`;
-  document.querySelector("#report-peak-anomaly").textContent = `%${Math.round(peak * 100)}`;
-  document.querySelector("#report-alarm-rate").textContent = `%${Math.round(alarmRate * 100)}`;
+  document.querySelector("#report-average-anomaly").textContent = pct(Math.round(average * 100));
+  document.querySelector("#report-peak-anomaly").textContent = pct(Math.round(peak * 100));
+  document.querySelector("#report-alarm-rate").textContent = pct(Math.round(alarmRate * 100));
 
   if (!events.length) {
     svg.innerHTML = `<rect x="58" y="28" width="630" height="157" rx="10" fill="#fffaf1"/><text x="373" y="109" text-anchor="middle" fill="#8a8176" font-size="13">${t("Henüz olay yok.")}</text>`;
@@ -1736,7 +2482,7 @@ function renderReportCharts(report) {
     svg.innerHTML = `<rect x="58" y="23" width="634" height="168" rx="11" fill="#fffdf9"/>${grid}${averageDashes}${series}${averageLabel}<text x="62" y="211" fill="#756d64" font-size="10" font-weight="700">${startLabel}</text><text x="688" y="211" text-anchor="end" fill="#756d64" font-size="10" font-weight="700">${endLabel}</text><text x="375" y="229" text-anchor="middle" fill="#8a8176" font-size="10">${currentLanguage === "en" ? "Time" : "Zaman"}</text><text transform="rotate(-90 13 107)" x="13" y="107" text-anchor="middle" fill="#8a8176" font-size="10">${currentLanguage === "en" ? "Anomalous audio (%)" : "Aykırı ses (%)"}</text>`;
     document.querySelector("#report-trend-legend").innerHTML = grouped.map(group => {
       const share = group.events.reduce((sum, event) => sum + (Number(event.anomaly_fraction) || 0), 0) / group.events.length;
-      return `<span class="chart-legend"><i style="background:${group.color}"></i>${escapeHtml(explainHiveIds(group.hiveId))}<b>%${Math.round(share * 100)}</b></span>`;
+      return `<span class="chart-legend"><i style="background:${group.color}"></i>${escapeHtml(explainHiveIds(group.hiveId))}<b>${pct(Math.round(share * 100))}</b></span>`;
     }).join("");
     const peakEvent = events.reduce((best,event) => event.anomaly_fraction > best.anomaly_fraction ? event : best,events[0]);
     const movingGroups = grouped.filter(group => group.events.length > 1).map(group => group.events.at(-1).anomaly_fraction-group.events[0].anomaly_fraction);
@@ -1754,7 +2500,7 @@ function renderReportCharts(report) {
   document.querySelector("#report-status-bar").innerHTML = counts.filter(item => item.count).map(item =>
     `<span class="${item.status.toLowerCase()}" style="flex:${item.count}" title="${t(item.status === "WATCH" ? "İzle" : item.status === "ALARM" ? "Alarm" : "Normal")}: ${item.count}"></span>`
   ).join("") || `<span class="empty" style="flex:1"></span>`;
-  document.querySelector("#report-status-chart").innerHTML = counts.map(item => { const percentage = events.length ? item.count/events.length*100 : 0; return `<div class="report-status-row ${item.status.toLowerCase()}${item.count ? "" : " is-empty"}"><div class="report-status-name"><i class="${item.status.toLowerCase()}"></i><span>${t(item.status === "WATCH" ? "İzle" : item.status === "ALARM" ? "Alarm" : "Normal")}</span></div><strong>${item.count}</strong><small>%${Math.round(percentage)}</small></div>`; }).join("");
+  document.querySelector("#report-status-chart").innerHTML = counts.map(item => { const percentage = events.length ? item.count/events.length*100 : 0; return `<div class="report-status-row ${item.status.toLowerCase()}${item.count ? "" : " is-empty"}"><div class="report-status-name"><i class="${item.status.toLowerCase()}"></i><span>${t(item.status === "WATCH" ? "İzle" : item.status === "ALARM" ? "Alarm" : "Normal")}</span></div><strong>${item.count}</strong><small>${pct(Math.round(percentage))}</small></div>`; }).join("");
   renderReportVerdict(report, events);
   const dominant = [...counts].sort((a,b) => b.count-a.count)[0];
   const dominantLabel = t(dominant.status === "WATCH" ? "İzle" : dominant.status === "ALARM" ? "Alarm" : "Normal");
@@ -1766,7 +2512,14 @@ function renderReportVerdict(report, events) {
   const isEnglish = currentLanguage === "en";
   const states = (report.hive_ids || []).map(hiveId => {
     const hiveEvents = events.filter(event => event.hive_id === hiveId);
-    const state = hiveEvents.some(event => event.status === "ALARM") ? "alarm" : hiveEvents.some(event => event.status === "WATCH") ? "watch" : hiveEvents.length ? "normal" : "idle";
+    // An alarm the beekeeper went out and found sound is answered, so the card stops
+    // asking for it. It does not drop to "healthy" either: the sound did change, and the
+    // report's own priority reads that period as one to watch. Confirmed, inconclusive
+    // and uninspected alarms all stay urgent — the same rule the report applies.
+    const outstanding = event => event.status === "ALARM" && event.inspection_result !== "no_issue_found";
+    const state = hiveEvents.some(outstanding) ? "alarm"
+      : hiveEvents.some(event => event.status === "WATCH" || event.status === "ALARM") ? "watch"
+      : hiveEvents.length ? "normal" : "idle";
     return {hiveId, state, count: hiveEvents.length};
   });
   const countOf = state => states.filter(item => item.state === state).length;
@@ -1808,6 +2561,100 @@ const ACTION_TAG_ICONS = {
 };
 ACTION_TAG_ICONS.idle = ACTION_TAG_ICONS.normal;
 
+// The guidance base is what makes "grounded in reviewed local notes" checkable rather
+// than a claim. All 28 are browsable here; a report shows only the handful it used.
+let guidanceNotes = [];
+
+async function loadGuidanceNotes() {
+  try {
+    guidanceNotes = await fetch(`/api/guidance?language=${currentLanguage}`).then(response => response.json());
+  } catch (error) {
+    guidanceNotes = [];
+  }
+  renderGuidanceNotes();
+  renderSettingsSidebar();
+}
+
+// Searching the base runs the same retriever a report is grounded with, rather than a
+// substring match. The one screen where a person can inspect the knowledge base should
+// rank passages the way the retrieval it exists to explain ranks them.
+let guidanceSearchToken = 0;
+
+// The citation a report follows back into the base. Printed under the note rather than as
+// its heading — and not at all when it is the only name the note has, because the same
+// slug twice tells a reader nothing the first one did not.
+function sourceLine(note) {
+  if (!note.title || note.title === note.id) return "";
+  return `<span class="guidance-source">${escapeHtml(note.id)}</span>`;
+}
+
+async function renderGuidanceNotes() {
+  const query = document.querySelector("#guidance-search").value.trim();
+  let matching = guidanceNotes;
+  if (query) {
+    const token = ++guidanceSearchToken;
+    try {
+      const found = await fetch(`/api/guidance?language=${currentLanguage}&q=${encodeURIComponent(query)}&limit=10`)
+        .then(response => response.json());
+      // A slower earlier request must not overwrite the answer to what is typed now.
+      if (token !== guidanceSearchToken) return;
+      matching = found;
+    } catch (error) {
+      if (token !== guidanceSearchToken) return;
+      matching = [];
+    }
+  }
+  document.querySelector("#guidance-count").textContent = query
+    ? `${matching.length}/${guidanceNotes.length} ${t("not")}`
+    : `${guidanceNotes.length} ${t("not")}`;
+  // A note is named and filed under a subject a beekeeper recognises. The tags underneath
+  // were the retriever's own vocabulary — "consecutive_anomalies", "false_positive" — and
+  // printing them here showed the reader the machine's index instead of their own topic.
+  // The id stays, small and last, because a report cites it and that trail has to hold.
+  document.querySelector("#guidance-list").innerHTML = matching.length
+    ? matching.map(note => `
+      <li>
+        <div class="guidance-note-head"><strong>${escapeHtml(note.title || note.id)}</strong>
+        <span class="guidance-category">${escapeHtml(note.category || "")}</span></div>
+        <p>${escapeHtml(note.text)}</p>
+        ${sourceLine(note)}
+      </li>`).join("")
+    : `<li class="guidance-empty"><p>${t("Bu konuda not bulunamadı.")}</p></li>`;
+}
+
+// The model's structured decision used to be computed, validated and then dropped: only
+// the grounding ids ever reached the panel. This shows what it actually concluded.
+const DECISION_PRIORITIES = {routine: "Rutin", watch: "İzleme", immediate: "Acil"};
+const DECISION_PATTERNS = {
+  within_baseline: "Normal aralıkta",
+  developing_acoustic_change: "Gelişen akustik değişim",
+  persistent_acoustic_change: "Kalıcı akustik değişim",
+};
+const DECISION_ACTIONS = {
+  continue_monitoring: "İzlemeye devam",
+  record_again: "Kaydı tekrarla",
+  inspect_hive: "Kovanı fiziksel kontrol et",
+  check_queen: "Kraliçeyi doğrula",
+};
+
+function renderModelDecision(assessment) {
+  const card = document.querySelector("#report-decision");
+  if (!assessment || !assessment.priority) { card.hidden = true; return; }
+  const priority = document.querySelector("#report-decision-priority");
+  priority.textContent = t(DECISION_PRIORITIES[assessment.priority] || assessment.priority);
+  priority.className = `report-decision-priority ${assessment.priority}`;
+  document.querySelector("#report-decision-pattern").textContent =
+    t(DECISION_PATTERNS[assessment.pattern] || assessment.pattern || "—");
+  // "Compatible with" is not "caused by", and the wording has to keep saying so.
+  document.querySelector("#report-decision-queen").textContent =
+    assessment.queen_loss_compatible ? t("Uyumlu olabilir, kesin tanı değil") : t("Uyumlu değil");
+  document.querySelector("#report-decision-inspection").textContent =
+    assessment.inspection_required ? t("Gerekli") : t("Şu an gerekmiyor");
+  const actions = (assessment.action_codes || []).map(code => t(DECISION_ACTIONS[code] || code));
+  document.querySelector("#report-decision-actions").textContent = actions.length ? actions.join(" · ") : "—";
+  card.hidden = false;
+}
+
 // A source count is a claim; the passages themselves are the evidence. A report stores
 // only their ids, so the texts are fetched and shown beside the assessment they shaped.
 let guidanceCache = null;
@@ -1822,8 +2669,15 @@ async function renderReportSources(ids) {
     }
     const found = ids.map(id => guidanceCache.byId.get(id)).filter(Boolean);
     if (!found.length) { card.hidden = true; return; }
-    document.querySelector("#report-sources-list").innerHTML = found.map(note =>
-      `<li><span class="report-source-id">${escapeHtml(note.id)}</span><p>${escapeHtml(note.text)}</p></li>`).join("");
+    // The same treatment as the guidance base: the note's name leads, its id follows for
+    // the audit trail. A list of slugs said what the retriever matched, not what it said.
+    document.querySelector("#report-sources-list").innerHTML = found.map(note => `
+      <li>
+        <div class="guidance-note-head"><strong>${escapeHtml(note.title || note.id)}</strong>
+        ${note.category ? `<span class="guidance-category">${escapeHtml(note.category)}</span>` : ""}</div>
+        <p>${escapeHtml(note.text)}</p>
+        ${sourceLine(note)}
+      </li>`).join("");
     card.hidden = false;
   } catch (error) {
     card.hidden = true;
@@ -1880,12 +2734,27 @@ function renderSelectedReport() {
   document.querySelector("#report-source").textContent = isAgent ? "Agent Framework + Foundry Local" : isFoundry ? "Foundry Local · Phi" : isSafeFallback ? t("Deterministik yedek motor") : isDeterministicDemo ? t("Waggle Yerel Rapor Motoru") : generator;
   // A second local model checked the priority. Whether the two agreed is part of how much
   // the reader should trust the number, so it is said rather than left in a log file.
-  const crossChecked = generator.includes("+");
-  const disagreed = generator.includes("(disagreed)");
-  document.querySelector("#report-cross-check").textContent = !crossChecked ? ""
-    : disagreed ? t("İki yerel model farklı karar verdi; temkinli olan seçildi.")
-    : t("İki yerel model aynı kararda birleşti.");
-  document.querySelector("#report-cross-check").className = `report-cross-check${disagreed ? " disagreed" : crossChecked ? " agreed" : ""}`;
+  // It is read from the stored assessment, which is where the validator actually recorded
+  // it and where the PDF already reads it from. Sniffing the generator string for a "+"
+  // claimed a cross-check on every report that merely had model-written prose, because
+  // that suffix is "+llm-narrative"; reports written before the assessment column existed
+  // still fall back to the string, with that suffix removed first.
+  const crossCheckModel = report.assessment?.cross_check_model || null;
+  const legacyGenerator = generator.replace(/\+llm-narrative/gi, "");
+  const crossChecked = crossCheckModel ? true : (!report.assessment && legacyGenerator.includes("+"));
+  const disagreed = crossCheckModel
+    ? report.assessment.cross_check_agreed === false
+    : (!report.assessment && legacyGenerator.includes("(disagreed)"));
+  // Saying nothing here leaves two very different situations looking identical: no second
+  // model configured, and a second model whose answer was rejected. Only a model-produced
+  // report can be cross-checked at all, so the single-model line is limited to those.
+  document.querySelector("#report-cross-check").textContent =
+    disagreed ? t("İki yerel model farklı karar verdi; temkinli olan seçildi.")
+    : crossChecked ? t("İki yerel model aynı kararda birleşti.")
+    : (isFoundry || isAgent) ? t("Tek yerel modelin kararı; çapraz doğrulama yapılmadı.")
+    : "";
+  document.querySelector("#report-cross-check").className =
+    `report-cross-check${disagreed ? " disagreed" : crossChecked ? " agreed" : (isFoundry || isAgent) ? " single" : ""}`;
   const groundingSources = report.grounding_sources || [];
   document.querySelector("#report-provenance").textContent = [isSafeFallback ? t("Yapay zekâ modeline ulaşılamadı") : "", groundingSources.length ? t("RAG ile kaynaklandırıldı") : "", isAgent ? t("Agent tarafından hazırlandı") : ""].filter(Boolean).join(" · ");
   document.querySelector(".report-aside-meta").classList.toggle("is-degraded", isSafeFallback);
@@ -1896,12 +2765,30 @@ function renderSelectedReport() {
   document.querySelector("#report-grounding-title").textContent = modelWroteText
     ? t("Metin yerel model tarafından yazıldı")
     : groundingSources.length ? t("Yerelde işlendi, kaynaklarla desteklendi") : t("Yerelde işlendi");
-  const groundingDetail = groundingSources.length ? `Foundry Local + RAG + SQLite · ${groundingSources.length} ${t("kaynak")}` : t("Kaynak kaydı yok · SQLite olay geçmişi");
+  const groundingDetail = groundingSources.length ? `ONNX → SQLite → RAG → Foundry Local · ${groundingSources.length} ${t("kaynak")}` : t("Kaynak kaydı yok · SQLite olay geçmişi");
   renderReportSources(groundingSources);
+  renderModelDecision(report.assessment);
   document.querySelector("#report-grounding-detail").textContent = modelWroteText ? `${t("Karar deterministik doğrulayıcıdan geldi")} · ${groundingDetail}` : groundingDetail;
   const scopeDate = value => new Intl.DateTimeFormat(currentLanguage === "tr" ? "tr-TR" : "en-GB", { dateStyle: "short" }).format(new Date(value));
   const scopeHives = report.hive_ids || [];
   document.querySelector("#report-scope").textContent = `${scopeDate(report.period_start)} – ${scopeDate(report.period_end)} · ${scopeHives.length ? scopeHives.join(", ") : t("Tüm kovanlar")}`;
+  // The chain a report rests on begins at the acoustic model that measured these events,
+  // and the page named only the model that phrased them. Every event carries the ONNX
+  // profile that decided it, so the first link can be shown rather than assumed.
+  const reportPeriodStart = new Date(report.period_start), reportPeriodEnd = new Date(report.period_end);
+  const measurementModels = [...new Set(alarmEvents
+    .filter(event => {
+      const at = new Date(event.timestamp);
+      return at >= reportPeriodStart && at <= reportPeriodEnd
+        && (!scopeHives.length || scopeHives.includes(event.hive_id));
+    })
+    .map(event => event.model)
+    .filter(Boolean))];
+  const measurementLine = document.querySelector("#report-measurement");
+  measurementLine.textContent = measurementModels.length
+    ? `${t("Ölçüm modeli")}: ${measurementModels.join(", ")} · ONNX Runtime`
+    : "";
+  measurementLine.hidden = measurementModels.length === 0;
   document.querySelector("#report-summary").textContent = explainHiveIds(report.summary);
   document.querySelector("#report-file-name").textContent = `${reportTypeLabel(report.report_type || "weekly")} ${currentLanguage === "en" ? "report" : "rapor"}`;
   document.querySelector("#report-file-meta").textContent = `PDF · ${scopeDate(report.period_end)}`;
@@ -2006,8 +2893,204 @@ async function acknowledgeEvent(eventId, result, note) {
     body: JSON.stringify({ result, note: note || null }),
   });
   if (!response.ok) throw new Error(t("Alarm onaylanamadı"));
+  // Hold the card open long enough to read what was just recorded. Without this the row
+  // it becomes appears in place of the button that was clicked, which reads as a failure.
+  justResolvedAlarm = String(eventId);
+  clearTimeout(justResolvedTimer);
+  justResolvedTimer = setTimeout(() => {
+    // Removing the card in one frame reads as the panel snatching it away before the
+    // outcome could be read, so it fades first and leaves on its own. Where the filter
+    // still holds it — "Tümü", or the hive's other alarms — it settles into a row instead.
+    // A re-render meanwhile leaves nothing to fade, and that case just settles.
+    const card = alarmsList.querySelector(".alarm-card.just-resolved");
+    const settle = () => { justResolvedAlarm = ""; renderAlarms(); };
+    if (!card) return settle();
+    card.classList.add("settling");
+    setTimeout(settle, ALARM_SETTLE_MS);
+  }, JUST_RESOLVED_MS);
   await refresh();
   await refreshAlarms();
+}
+
+// Icons for the alarm rail. They carry no meaning on their own — every one sits beside
+// its own label — so they stay decorative to a screen reader.
+const ICON_WAVE = `<svg class="alarm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h2.6l2.1-6.6 3.2 13.2 2.9-9.4 1.9 5 1.6-3.2H22"/></svg>`;
+const ICON_SEVERITY = `<svg class="alarm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11.5" cy="12.5" r="7.2"/><circle cx="11.5" cy="12.5" r="2.8"/><path d="m17.4 6.6 3.1-3.1M18.2 3.4v3.3h3.3"/></svg>`;
+const ICON_RUN = `<svg class="alarm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12.5" r="7.6"/><path d="M12 8.4v4.4l2.9 1.8"/></svg>`;
+const ICON_GUIDANCE = `<svg class="alarm-guidance-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.6A1.6 1.6 0 0 1 5.6 4H11v15.4H5.6A1.6 1.6 0 0 0 4 21Z"/><path d="M20 5.6A1.6 1.6 0 0 0 18.4 4H13v15.4h5.4A1.6 1.6 0 0 1 20 21Z"/></svg>`;
+const ICON_CLIPBOARD = `<svg class="alarm-button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 3.8h5.6v3.1H9.2z"/><path d="M15.6 5.4h2A1.6 1.6 0 0 1 19.2 7v12.6a1.6 1.6 0 0 1-1.6 1.6H6.4a1.6 1.6 0 0 1-1.6-1.6V7a1.6 1.6 0 0 1 1.6-1.6h2"/></svg>`;
+
+function alarmPastCountLabel(count) {
+  return currentLanguage === "en"
+    ? `${count} past ${count === 1 ? "record" : "records"}`
+    : `${count} geçmiş kayıt`;
+}
+
+// English counts its nouns and Turkish does not, so this is built rather than looked up:
+// the dictionary maps whole strings, and "2 aktif alarm" would have to be listed per count.
+function alarmOpenPillLabel(count) {
+  return currentLanguage === "en"
+    ? `${count} open ${count === 1 ? "alert" : "alerts"}`
+    : `${count} aktif alarm`;
+}
+
+// Seconds belong in the event table, where one row is compared with the next. A card is
+// scanned, so it gets the shape a person would say out loud: "3 Eyl 2026 · 22:49".
+function alarmDateLabel(value) {
+  const locale = currentLanguage === "tr" ? "tr-TR" : "en-GB";
+  const date = new Date(value);
+  const day = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(date);
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(date);
+  return `${day} · ${time}`;
+}
+
+// An alarm is the first step of a three-step job, and the card used to show only the
+// button for step two. Naming all three says what "completing" the inspection commits to.
+function alarmStepsMarkup(event) {
+  const steps = [
+    { label: "Alarm algılandı", done: true },
+    { label: "Fiziksel kontrol", done: Boolean(event.acknowledged_at) },
+    { label: event.inspection_result ? "Sonuç kaydedildi" : "Sonucu kaydet", done: Boolean(event.inspection_result) },
+  ];
+  const settled = steps.every(step => step.done);
+  return `<ol class="alarm-steps${settled ? " settled" : ""}">${steps.map((step, index) =>
+    // A finished step is a tick, not a number: the numbers are there to say what order
+    // the work goes in, and once it is done the order is no longer the useful part.
+    `<li class="alarm-step ${step.done ? "done" : "todo"}" style="--step-order:${index}"><span class="alarm-step-mark">${settled ? "✓" : index + 1}</span><span class="alarm-step-label">${t(step.label)}</span></li>`).join("")}</ol>`;
+}
+
+// The two numbers answer different questions — how much of the recording moved, and how
+// far it moved — so they are shown as two tiles rather than one run-on line. A number that
+// was never measured says so, because a blank tile reads as zero.
+function alarmMetricsMarkup(event) {
+  const tiles = [
+    { icon: ICON_WAVE, label: "Aykırı ses", value: Number(event.anomaly_fraction), missing: "Ölçülmedi" },
+    { icon: ICON_SEVERITY, label: "Sapma şiddeti", value: Number(event.anomaly_severity), missing: "Ölçülmedi" },
+  ];
+  return `<div class="alarm-metrics">${tiles.map(tile => `
+    <div class="alarm-metric">${tile.icon}<div><span>${t(tile.label)}</span><strong>${Number.isFinite(tile.value) ? pct(Math.round(tile.value * 100)) : t(tile.missing)}</strong></div></div>`).join("")}</div>`;
+}
+
+// The newest alarm on a hive is the one being worked, so it is the one opened: the whole
+// card, with the measurements and the action beside it. Older ones collapse to a row.
+function alarmFeaturedCard(event, chronological) {
+  const acknowledged = Boolean(event.acknowledged_at);
+  return acknowledged ? alarmResolvedCard(event) : alarmOpenCard(event, chronological);
+}
+
+function alarmOpenCard(event, chronological) {
+  const repeat = alarmRepeatLabel(event, chronological);
+  return `
+        <article class="alarm-card featured open">
+          <div class="alarm-icon" aria-hidden="true">!</div>
+          <div class="alarm-content">
+            <div class="alarm-card-head"><div><span class="alarm-live-state">${t("Aktif")}</span><span>${alarmDateLabel(event.timestamp)}</span>${repeat ? `<span class="alarm-repeat">${escapeHtml(repeat)}</span>` : ""}</div></div>
+            <h3>${t("Kalıcı akustik değişim")}</h3>
+            <p>${escapeHtml(alarmSummary(event))}</p>
+            <div class="alarm-guidance" data-alarm-guidance="${event.id}" hidden></div>
+          </div>
+          <div class="alarm-rail">
+            ${alarmStepsMarkup(event)}
+            ${alarmMetricsMarkup(event)}
+            <div class="alarm-rail-actions">
+              <button class="alarm-primary-button" data-alarm-ack="${event.id}" type="button">${ICON_CLIPBOARD}${t("Fiziksel kontrolü başlat")}</button>
+              <button class="alarm-secondary-link" data-hive-detail="${escapeHtml(event.hive_id)}" type="button">${t("Kovanı incele")} <span aria-hidden="true">→</span></button>
+            </div>
+          </div>
+        </article>`;
+}
+
+// A closed alarm is a record, so it stops shouting: the red goes, the reading moves under
+// a label saying when it was taken, and what the inspection found takes the front.
+function alarmResolvedCard(event) {
+  const fresh = String(event.id) === justResolvedAlarm;
+  const outcome = event.inspection_result === "issue_confirmed" ? "Sorun doğrulandı"
+    : event.inspection_result === "no_issue_found" ? "Belirgin sorun görülmedi" : "Belirsiz";
+  const by = [event.acknowledged_by ? `${t("Kontrol eden")}: ${escapeHtml(event.acknowledged_by)}` : "", alarmDateLabel(event.acknowledged_at)]
+    .filter(Boolean).join(" · ");
+  return `
+        <article class="alarm-card featured resolved${fresh ? " just-resolved" : ""}">
+          <div class="alarm-icon" aria-hidden="true">✓</div>
+          <div class="alarm-content">
+            <div class="alarm-card-head"><div><span class="alarm-live-state">${t("Kapandı")}</span><span>${alarmDateLabel(event.acknowledged_at)}</span></div></div>
+            <h3>${t("Fiziksel kontrol tamamlandı")}</h3>
+            <p>${t("Alarm saha kontrolüyle kapatıldı. Yeni bir kalıcı değişim algılanırsa tekrar bildirim oluşturulur.")}</p>
+            ${fresh ? `<p class="alarm-saved-note"><span aria-hidden="true">✓</span>${t("Kayıt başarıyla kaydedildi")}</p>` : ""}
+            <div class="alarm-outcome">
+              <p class="alarm-outcome-label">${t("Kontrol sonucu")}</p>
+              <span class="alarm-outcome-chip">${t(outcome)}</span>
+              ${event.inspection_note ? `<p class="alarm-outcome-note">${escapeHtml(event.inspection_note)}</p>` : ""}
+              ${by ? `<p class="alarm-outcome-by">${by}</p>` : ""}
+            </div>
+          </div>
+          <div class="alarm-rail">
+            ${alarmStepsMarkup(event)}
+            <p class="alarm-metrics-label">${t("Alarm anındaki ölçüm")}</p>
+            ${alarmMetricsMarkup(event)}
+            <div class="alarm-rail-actions">
+              <button class="alarm-secondary-link" data-hive-detail="${escapeHtml(event.hive_id)}" type="button">${t("Kovanı incele")} <span aria-hidden="true">→</span></button>
+            </div>
+          </div>
+        </article>`;
+}
+
+// One line for an alarm that is no longer the live one, carrying the same facts in the
+// order they are scanned. It opens into the full card on request.
+function alarmCompactRow(event) {
+  const acknowledged = Boolean(event.acknowledged_at);
+  const fraction = Number(event.anomaly_fraction);
+  const severity = Number(event.anomaly_severity);
+  return `
+        <article class="alarm-card compact ${acknowledged ? "resolved" : "open"}">
+          <span class="alarm-row-dot" aria-hidden="true">${acknowledged ? "✓" : "!"}</span>
+          <span class="alarm-row-date">${alarmDateLabel(event.timestamp)}</span>
+          <span class="alarm-live-state">${t(acknowledged ? "Kapandı" : "Aktif")}</span>
+          <strong class="alarm-row-title">${t("Kalıcı akustik değişim")}</strong>
+          <span class="alarm-row-metric">${ICON_WAVE}${Number.isFinite(fraction) ? `${pct(Math.round(fraction * 100))} ${t("aykırı ses")}` : t("Aykırı ses ölçülmedi")}</span>
+          <span class="alarm-row-metric">${ICON_SEVERITY}${Number.isFinite(severity) ? `${pct(Math.round(severity * 100))} ${t("sapma şiddeti")}` : t("Şiddet ölçülmedi")}</span>
+          <button class="alarm-row-expand" data-alarm-expand="${event.id}" type="button">${t("Detayları aç")} <span aria-hidden="true">⌄</span></button>
+        </article>`;
+}
+
+// Every alarm card carried the same two sentences, so two alerts on one hive were told
+// apart only by their timestamps: a beekeeper could not see whether the second one was a
+// new problem or the first one continuing. What the monitor measured says more. The
+// unbroken run is why the alarm fired at all — the threshold is 30 windows of one second
+// — and it is the number that can be acted on.
+function alarmSummary(event) {
+  const english = currentLanguage === "en";
+  const sentences = [];
+
+  const run = Number(event.consecutive_anomalies);
+  if (Number.isFinite(run) && run > 0) {
+    sentences.push(english
+      ? `The sound stayed outside this hive's normal range for ${run} unbroken seconds.`
+      : `Ses, bu kovanın normal aralığının dışında ${run} saniye kesintisiz kaldı.`);
+  }
+
+  const fraction = Number(event.anomaly_fraction);
+  if (Number.isFinite(fraction)) {
+    const share = Math.round(fraction * 100);
+    // Turkish suffixes agree with the vowel of the number they follow, which a template
+    // cannot know, so the ratio is stated as its own clause rather than inflected.
+    sentences.push(share >= 100
+      ? (english ? "Every second of the recording deviated." : "Kaydın tamamı normal aralığın dışındaydı.")
+      : (english ? `${share}% of the recording fell outside it.` : `Normal aralığın dışında kalan kayıt oranı: ${pct(share)}.`));
+  }
+
+  sentences.push(t("Kovanın fiziksel olarak kontrol edilmesi öneriliyor."));
+  return sentences.join(" ");
+}
+
+// "Is this new, or the one from this morning still going?" is the first question an alarm
+// raises and the card could not answer it. Counting from the oldest is how a person counts.
+function alarmRepeatLabel(event, chronological) {
+  const order = chronological.findIndex(item => item.id === event.id) + 1;
+  if (order < 2) return "";
+  const previous = chronological[order - 2];
+  return currentLanguage === "en"
+    ? `Alarm ${order} on this hive · previous ${alarmDateLabel(previous.timestamp)}`
+    : `Bu kovandaki ${order}. alarm · önceki ${alarmDateLabel(previous.timestamp)}`;
 }
 
 function renderAlarms() {
@@ -2022,7 +3105,11 @@ function renderAlarms() {
   const filterValue = alarmFilter.dataset.value || "open";
   const hiveQuery = alarmHiveSearch.value.trim().toLocaleLowerCase(currentLanguage === "tr" ? "tr-TR" : "en-US");
   const filtered = criticalEvents.filter(event => {
-    const matchesStatus = filterValue === "all" ||
+    // The list defaults to the open alarms, and completing an inspection is exactly what
+    // stops an alarm being open — so the card vanished the instant the button was pressed,
+    // before it could show what had been recorded. The one just closed stays until it has
+    // finished settling, whatever the filter says.
+    const matchesStatus = String(event.id) === justResolvedAlarm || filterValue === "all" ||
       (filterValue === "open" && !event.acknowledged_at) ||
       (filterValue === "acknowledged" && event.acknowledged_at);
     const hiveText = `${hiveLabel(event.hive_id)} ${event.hive_id}`.toLocaleLowerCase(currentLanguage === "tr" ? "tr-TR" : "en-US");
@@ -2033,24 +3120,67 @@ function renderAlarms() {
     groups[event.hive_id].push(event);
     return groups;
   }, {});
-  alarmsList.innerHTML = filtered.length ? Object.entries(grouped).map(([hiveId, events], groupIndex) => `
+  alarmsList.innerHTML = filtered.length ? Object.entries(grouped).map(([hiveId, events], groupIndex) => {
+    // Oldest first, so an alarm can say which one it is in this hive's sequence.
+    const chronological = [...events].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // Newest first for display: the live alarm is the one being worked, so it leads.
+    const newestFirst = [...chronological].reverse();
+    const openInGroup = events.filter(item => !item.acknowledged_at).length;
+    // The card that opens is the alarm still being worked. A hive whose alarms are all
+    // closed keeps them as rows: they are a record, and a record does not need the room.
+    const featuredId = newestFirst.some(item => String(item.id) === justResolvedAlarm)
+      ? justResolvedAlarm
+      : String(newestFirst.find(item => !item.acknowledged_at)?.id ?? "");
+    return `
     <section class="alarm-hive-group ${collapsedAlarmHives.has(hiveId) ? "collapsed" : ""}" data-alarm-hive="${escapeHtml(hiveId)}">
       <header class="alarm-hive-head">
         <span class="managed-hive-icon hive-tone-${groupIndex % 3}" aria-hidden="true"><svg viewBox="0 0 54 54"><path class="hive-roof" d="M15 17.5 21 11h12l6 6.5"></path><path class="hive-body" d="M14.5 18h25l3 6.5-2.7 6 1.5 6.5-4.8 6H17.5l-4.8-6 1.5-6.5-2.7-6 3-6.5Z"></path><path class="hive-band" d="M13 24.5h28M14.2 30.5h25.6M13.3 37h27.4"></path><path class="hive-feet" d="M18 43v3M36 43v3"></path><ellipse class="hive-door" cx="27" cy="38.5" rx="4.2" ry="4.8"></ellipse></svg></span>
-        <div><span>${t("Alarm alan kovan")}</span><h3>${escapeHtml(hiveLabel(hiveId))}</h3></div>
-        <button class="alarm-hive-toggle" data-alarm-hive-toggle type="button" aria-expanded="${String(!collapsedAlarmHives.has(hiveId))}"><strong>${events.length} ${t(events.length === 1 ? "olay" : "olaylar")}</strong><span aria-hidden="true">⌃</span></button>
+        <div class="alarm-hive-title"><h3>${escapeHtml(hiveLabel(hiveId))}</h3>${openInGroup
+          ? `<span class="alarm-open-pill">${alarmOpenPillLabel(openInGroup)}</span>`
+          : `<span class="alarm-open-pill closed">${t("Alarm kapandı")}</span><span class="alarm-past-count">${alarmPastCountLabel(events.length)}</span>`}</div>
+        <button class="alarm-hive-toggle" data-alarm-hive-toggle type="button" aria-expanded="${String(!collapsedAlarmHives.has(hiveId))}" aria-label="${t("Kovanın alarmlarını aç veya kapat")}"><span aria-hidden="true">⌃</span></button>
       </header>
-      <div class="alarm-hive-events">${events.map(event => `
-        <article class="alarm-card ${event.acknowledged_at ? "resolved" : "open"}">
-          <div class="alarm-icon" aria-hidden="true">${event.acknowledged_at ? "✓" : "!"}</div>
-          <div class="alarm-content">
-            <div class="alarm-card-head"><div><span class="alarm-live-state">${t(event.acknowledged_at ? "Kontrol edildi" : "Aktif")}</span><span>${dateLabel(event.timestamp)}</span></div></div>
-            <h3>${t("Kalıcı akustik değişim")}</h3>
-            <p>${event.acknowledged_at ? `${t("Kontrol edildi")}: ${dateLabel(event.acknowledged_at)}${event.acknowledged_by ? ` · ${escapeHtml(event.acknowledged_by)}` : ""}${event.inspection_result ? ` · ${t(event.inspection_result === "issue_confirmed" ? "Sorun doğrulandı" : event.inspection_result === "no_issue_found" ? "Sorun görülmedi" : "Belirsiz")}` : ""}${event.inspection_note ? `<span class="alarm-inspection-saved-note">${escapeHtml(event.inspection_note)}</span>` : ""}` : t("Kovanın fiziksel olarak kontrol edilmesi öneriliyor.")}</p>
-          </div>
-          <div class="alarm-card-actions"><span class="alarm-confidence">%${Math.round(event.anomaly_fraction * 100)} ${t("aykırı ses")}</span>${event.acknowledged_at ? `<span class="resolved-label">${t("Kontrol edildi")}</span>` : `<button class="ack-button alarm-ack-button" data-alarm-ack="${event.id}" type="button">${t("Fiziksel kontrolü tamamla")} →</button>`}</div>
-        </article>`).join("")}</div>
-    </section>`).join("") : `<div class="empty-state"><strong>${t(filterValue === "open" ? "Açık alarm yok" : "Bu filtrede alarm yok")}</strong><p>${t("Kovanlarınızın kritik olayları burada görünecek.")}</p></div>`;
+      <div class="alarm-hive-events">${newestFirst.map(event =>
+        String(event.id) === featuredId || expandedAlarms.has(String(event.id))
+          ? alarmFeaturedCard(event, chronological)
+          : alarmCompactRow(event)).join("")}</div>
+    </section>`;
+  }).join("") : `<div class="empty-state"><strong>${t(filterValue === "open" ? "Açık alarm yok" : "Bu filtrede alarm yok")}</strong><p>${t("Kovanlarınızın kritik olayları burada görünecek.")}</p></div>`;
+  hydrateAlarmGuidance();
+}
+
+// Retrieval was reachable only through report generation, so an alarm sitting on the
+// screen carried no guidance until a weekly report was written about it. The same
+// retriever, given the one event, answers immediately and with no model in the loop —
+// which is also why it can be shown on a panel whose local model is switched off.
+const alarmGuidanceCache = new Map();
+
+async function hydrateAlarmGuidance() {
+  // Only the cards a person can actually see are worth a request; the rest fill in when
+  // the filter narrows to them.
+  const slots = [...alarmsList.querySelectorAll("[data-alarm-guidance]")].slice(0, 12);
+  for (const slot of slots) {
+    const eventId = slot.dataset.alarmGuidance;
+    const key = `${eventId}:${currentLanguage}`;
+    let notes = alarmGuidanceCache.get(key);
+    if (!notes) {
+      try {
+        const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/guidance?language=${currentLanguage}&limit=2`);
+        if (!response.ok) continue;
+        notes = await response.json();
+        alarmGuidanceCache.set(key, notes);
+      } catch (error) {
+        continue;
+      }
+    }
+    // A re-render while a request was in flight detaches the slot it was meant for.
+    if (!notes.length || !slot.isConnected) continue;
+    slot.innerHTML = `<div class="alarm-guidance-head">${ICON_GUIDANCE}<p class="alarm-guidance-label">${t("Yerel kılavuz")}</p></div><ul>${notes.map(note =>
+      // The note's id is a knowledge-base key: it belongs in the report and the export,
+      // where provenance is checked, and not on the card a beekeeper reads in the field.
+      `<li><span>${escapeHtml(note.text)}</span></li>`).join("")}</ul>`;
+    slot.hidden = false;
+  }
 }
 
 async function refreshAlarms() {
@@ -2086,15 +3216,30 @@ async function refreshContext() {
   ]);
   if (weatherResponse?.ok) renderWeather(await weatherResponse.json());
   else if (!currentSettings?.weather_enabled) renderWeatherDisabled();
+  // Weather on and the service out of reach fell through both branches, so the card sat on
+  // its initial "Yükleniyor…" for as long as the page stayed open — on a panel whose whole
+  // point is that it keeps working without the internet, that is the ordinary case.
+  else renderWeatherUnavailable();
   if (reportsResponse.ok) renderReports(await reportsResponse.json());
   if (reportEventsResponse.ok) { reportEvents = await reportEventsResponse.json(); if (latestReports.length) renderSelectedReport(); }
 }
 
-soundButton.addEventListener("click", () => {
+soundButton.addEventListener("click", async () => {
   soundEnabled = !soundEnabled;
   soundButton.textContent = t(`Sesli alarm: ${soundEnabled ? "açık" : "kapalı"}`);
+  // The same switch exists on the Settings page and that one is stored, so the two used to
+  // disagree the moment this was pressed: the header said off, Settings still said on, and
+  // a reload restored the setting without explanation. Keep them one control.
+  const checkbox = document.querySelector("#settings-sound");
+  if (checkbox) checkbox.checked = soundEnabled;
+  if (currentRole !== "owner" || !currentSettings) return;
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({...currentSettings, sound_enabled: soundEnabled}),
+  }).catch(() => null);
+  if (response && response.ok) currentSettings = await response.json();
 });
-demoButton.addEventListener("click", startDemo);
 sensorButton.addEventListener("click", analyzeSensorAudio);
 sensorAudio.addEventListener("change", renderSensorQueue);
 document.querySelector("#live-record-toggle").addEventListener("click", toggleLiveRecording);
@@ -2214,19 +3359,42 @@ function enhanceSelect(select) {
   sync();
 }
 
-["#event-filter", "#report-hive-filter", "#health-evidence", "#device-kind", "#sensor-device", "#settings-refresh", "#settings-language"]
+// #settings-refresh is deliberately absent: its five choices are drawn as a segmented row
+// by syncRefreshSegments, and it was still being enhanced into a dropdown as well — so the
+// Settings page carried two working controls for the refresh interval, stacked, and moving
+// one did not visibly move the other.
+["#event-filter", "#report-hive-filter", "#health-evidence", "#device-kind", "#sensor-device", "#settings-language", "#export-format", "#export-period"]
   .forEach(selector => { const select = document.querySelector(selector); if (select) enhanceSelect(select); });
 
 document.querySelector("#report-history-open").addEventListener("click", () => reportPickerButton.click());
+
+// Searching the history is a tool, not the report. It used to sit open between the page
+// title and the verdict, so the answer a beekeeper came for started a screen and a half
+// down; "Dönemi değiştir" then scrolled to a panel that was already on screen. Closed by
+// default, it gives that space back and the button now actually opens something.
+function setReportFilters(open) {
+  const controls = document.querySelector(".report-controls");
+  const toggle = document.querySelector("#report-controls-toggle");
+  controls.classList.toggle("is-collapsed", !open);
+  toggle.setAttribute("aria-expanded", String(open));
+}
+
+document.querySelector("#report-controls-toggle").addEventListener("click", () => {
+  setReportFilters(document.querySelector(".report-controls").classList.contains("is-collapsed"));
+});
+
 document.querySelector("#report-period-jump").addEventListener("click", () => {
   const controls = document.querySelector(".report-controls");
-  controls.scrollIntoView({behavior: "smooth", block: "center"});
+  setReportFilters(true);
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  controls.scrollIntoView({behavior: reduceMotion ? "auto" : "smooth", block: "center"});
   controls.classList.add("is-highlighted");
   setTimeout(() => controls.classList.remove("is-highlighted"), 1600);
   document.querySelector("#report-date-start").focus({preventScroll: true});
 });
 
 const reportGenerateButton = document.querySelector("#report-generate");
+const reportProgress = document.querySelector("#report-generate-progress");
 let reportGenerationPoll = null;
 
 function watchReportGeneration() {
@@ -2250,29 +3418,65 @@ function showReportNotice(message) {
   setTimeout(() => alertEl.classList.remove("show"), 5500);
 }
 
+// The two facts worth knowing while the model writes: which unit it runs on, and how far
+// it has got. As chips rather than clauses appended to a sentence — the sentence grew a
+// tail that read as broken output, and the numbers were unfindable inside it.
+function reportProgressChips(status) {
+  const chips = [];
+  if (status.device) chips.push(escapeHtml(String(status.device)));
+  if (status.written_characters) chips.push(`${Number(status.written_characters).toLocaleString(currentLanguage === "en" ? "en-GB" : "tr-TR")} ${t("karakter")}`);
+  return chips;
+}
+
+function renderReportProgress(status) {
+  const stalled = Boolean(status.stalled);
+  const elapsed = Math.max(0, status.elapsed_seconds || 0);
+  reportProgress.hidden = false;
+  reportProgress.classList.toggle("is-stalled", stalled);
+  document.querySelector("#report-progress-state").textContent = stalled ? t("Yanıt gelmiyor") : t("Rapor üretiliyor");
+  document.querySelector("#report-progress-clock").textContent = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+  // Silence is the stalled case; a rising character count is the merely slow one, and
+  // before the answer arrived token by token the two looked identical from here.
+  const note = document.querySelector("#report-generate-note");
+  note.classList.toggle("is-stalled", stalled);
+  note.textContent = stalled
+    ? t("Model uzun süredir yanıt vermiyor. Sunucu günlüğüne bakın; panel çalışmaya devam ediyor.")
+    : t("Model cihazda çalışıyor. Bu donanımda genellikle 3–5 dakika sürer; bu sırada paneli kullanmaya devam edebilirsiniz.");
+  document.querySelector("#report-progress-meta").innerHTML = reportProgressChips(status).map(chip => `<li>${chip}</li>`).join("");
+}
+
 async function refreshReportGeneration() {
   try {
     const status = await (await fetch("/api/reports/generation-status")).json();
-    reportGenerateButton.hidden = !status.enabled;
-    if (!status.enabled) return status;
-    reportGenerateButton.disabled = status.running;
-    if (!status.running) reportGenerateButton.textContent = t("Yeni rapor üret");
-    else if (status.stalled) reportGenerateButton.textContent = t("Yanıt gelmiyor…");
-    else {
-      const elapsed = status.elapsed_seconds || 0;
-      reportGenerateButton.textContent = elapsed > 5 ? `${t("Rapor üretiliyor…")} ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}` : t("Rapor üretiliyor…");
+    if (!status.enabled) {
+      reportGenerateButton.hidden = true;
+      reportProgress.hidden = true;
+      return status;
     }
-    reportGenerateButton.title = status.stalled ? t("Model uzun süredir yanıt vermiyor; sunucu günlüğünü kontrol edin.") : "";
+    // The button and the progress card are the same slot in two states, never both: a
+    // disabled button carrying its own counter read as a control that had broken.
+    reportGenerateButton.hidden = Boolean(status.running);
+    reportGenerateButton.disabled = Boolean(status.running);
+    if (!status.running) {
+      reportGenerateButton.textContent = t("Yeni rapor üret");
+      reportProgress.hidden = true;
+      return status;
+    }
+    renderReportProgress(status);
     return status;
   } catch (error) {
     reportGenerateButton.hidden = true;
+    reportProgress.hidden = true;
     return null;
   }
 }
 
 reportGenerateButton.addEventListener("click", async () => {
   reportGenerateButton.disabled = true;
-  reportGenerateButton.textContent = t("Rapor üretiliyor…");
+  // Swap to the progress card on the click rather than on the first poll, so the press
+  // has an answer immediately instead of a second of an unchanged button.
+  reportGenerateButton.hidden = true;
+  renderReportProgress({elapsed_seconds: 0});
   try {
     const response = await fetch("/api/reports/generate", {
       method: "POST",
@@ -2283,7 +3487,9 @@ reportGenerateButton.addEventListener("click", async () => {
     watchReportGeneration();
   } catch (error) {
     reportGenerateButton.disabled = false;
+    reportGenerateButton.hidden = false;
     reportGenerateButton.textContent = t("Yeni rapor üret");
+    reportProgress.hidden = true;
     showReportNotice(`${t("Rapor üretilemedi")}: ${error.message}`);
   }
 });
@@ -2311,6 +3517,19 @@ document.addEventListener("click", event => {
 eventsEl.addEventListener("click", event => {
   const button = event.target.closest("[data-ack]");
   if (button) acknowledgeEvent(button.dataset.ack);
+  const guidance = event.target.closest("[data-event-guidance]");
+  if (!guidance) return;
+  const eventId = guidance.dataset.eventGuidance;
+  const row = eventsEl.querySelector(`[data-guidance-for="${eventId}"]`);
+  const opening = row.hidden;
+  row.hidden = !opening;
+  guidance.setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    expandedEventGuidance.add(eventId);
+    fillEventGuidance(eventId);
+  } else {
+    expandedEventGuidance.delete(eventId);
+  }
 });
 hivesEl.addEventListener("click", event => {
   const button = event.target.closest("[data-hive-detail]");
@@ -2322,6 +3541,42 @@ hivesEl.addEventListener("click", event => {
     if (button) openHiveDetail(button.dataset.hiveDetail);
   });
 });
+// The two segmented controls above the chart. Both only change what is drawn, so the
+// selection lives on the group element and the render reads it back.
+["#chart-range", "#chart-metric"].forEach(selector => {
+  const group = document.querySelector(selector);
+  group.addEventListener("click", event => {
+    const button = event.target.closest("button");
+    if (!button || button.classList.contains("active")) return;
+    group.dataset.value = button.dataset.range || button.dataset.metric;
+    group.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
+    renderHiveDetail();
+  });
+});
+
+document.querySelector("#detail-view").addEventListener("click", event => {
+  if (event.target.closest("[data-open-alarms]")) {
+    showView("alarms", true);
+    return;
+  }
+  if (event.target.closest("[data-open-guidance]")) {
+    // The reviewed notes live inside settings, so the link goes there and then to them:
+    // landing at the top of a long settings page is not "opening the guidance".
+    showView("settings", true);
+    document.querySelector(".guidance-section")?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
+    return;
+  }
+  const ack = event.target.closest("[data-alarm-ack]");
+  if (!ack) return;
+  pendingAlarmId = ack.dataset.alarmAck;
+  const dialog = document.querySelector("#alarm-confirm-dialog");
+  translatePage(dialog);
+  dialog.showModal();
+});
+
 document.querySelector("#back-overview").addEventListener("click", () => {
   selectedHiveId = null;
   showView("overview", true);
@@ -2421,6 +3676,17 @@ alarmsList.addEventListener("click", event => {
     toggle.setAttribute("aria-expanded", String(!collapsed));
     return;
   }
+  const expand = event.target.closest("[data-alarm-expand]");
+  if (expand) {
+    expandedAlarms.add(expand.dataset.alarmExpand);
+    renderAlarms();
+    return;
+  }
+  const hive = event.target.closest("[data-hive-detail]");
+  if (hive) {
+    openHiveDetail(hive.dataset.hiveDetail);
+    return;
+  }
   const button = event.target.closest("[data-alarm-ack]");
   if (!button) return;
   pendingAlarmId = button.dataset.alarmAck;
@@ -2453,9 +3719,163 @@ document.querySelector("#alarm-confirm-dialog").addEventListener("close", () => 
   document.querySelector("#alarm-inspection-message").textContent = "";
 });
 document.querySelector("#refresh-status").addEventListener("click", refreshSystemStatus);
+
+// --- Dışa aktar ------------------------------------------------------------------
+// The label, the sentence and the mark for every dataset the API can produce. Held here
+// rather than in the markup because the list is now rendered from what the server says it
+// holds: a dataset with no rows is still offered, but it says so before it is chosen.
+const EXPORT_DATASETS = [
+  {key: "hives", title: "Kovanlar", description: "Aktif ve arşivlenmiş bütün kovanların adları, konumları ve teknik kimlikleri.",
+   icon: '<path d="M4 9.5 12 5l8 4.5v9L12 23l-8-4.5Z"></path><path d="M4 9.5 12 14l8-4.5M12 14v9"></path>'},
+  {key: "events", title: "Tüm olaylar", description: "Model durumları, akustik değişim oranları, ölçüm koşulları ve zamanlar.",
+   icon: '<path d="M3.5 17.5 9 11l4 3.5 7.5-8"></path><path d="M15.5 6.5h5v5"></path>'},
+  {key: "alarms", title: "Kritik alarmlar", description: "Açık ve kontrol edilmiş ana arı kaybı şüphesi kayıtları.", tone: "alarm",
+   icon: '<path d="M12 3.5 22 20H2Z"></path><path d="M12 10v4.5M12 17.2v.1"></path>'},
+  {key: "reports", title: "Raporlar", description: "Haftalık değerlendirmeler, model kararları ve dayandıkları kaynaklar.",
+   icon: '<path d="M6 3.5h8l4 4v13H6Z"></path><path d="M14 3.5v4h4M9 12h6M9 15.5h6M9 19h3"></path>'},
+  {key: "confirmations", title: "Saha doğrulamaları", description: "Kovanı yerinde kontrol eden hesap, gözlem ve sonucun profile alınıp alınmadığı.",
+   icon: '<path d="M12 3.2 19.5 6v6.4c0 4.2-3 7.6-7.5 9.4-4.5-1.8-7.5-5.2-7.5-9.4V6Z"></path><path d="m8.8 12.2 2.4 2.4 4.2-4.6"></path>'},
+  {key: "enrollment", title: "Öğrenme kayıtları", description: "Kovanın profilini oluşturan kayıt defteri: hangi cihaz, hangi gün, kaç pencere. Ses dosyaları değil.",
+   icon: '<path d="M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3Z"></path><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"></path>'},
+  {key: "devices", title: "Cihazlar", description: "Hangi mikrofonun hangi kovana bağlı olduğu, türü ve en son ne zaman kayıt gönderdiği.",
+   icon: '<rect x="7" y="3" width="10" height="18" rx="2.4"></rect><path d="M10.6 6.2h2.8"></path><circle cx="12" cy="17.4" r="1.1"></circle>'},
+  {key: "guidance", title: "Yerel kılavuz tabanı", description: "Değerlendirmelerin dayandığı gözden geçirilmiş notlar, etiketleri ve seçim koşullarıyla.",
+   icon: '<path d="M5 4.5h9l5 5v10.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 5 4.5Z"></path><path d="M14 4.5v5h5M8 13h8M8 16.5h5"></path>'},
+];
+
+const exportSelection = new Set();
+let exportSummary = {};
+let exportGroup = "all";
+
+function exportPeriodBounds() {
+  const days = Number(document.querySelector("#export-period")?.value);
+  if (!days) return null;
+  const since = new Date(Date.now() - days * 86400000);
+  return {since: since.toISOString()};
+}
+
+async function refreshExports() {
+  const bounds = exportPeriodBounds();
+  const query = bounds ? `?since=${encodeURIComponent(bounds.since)}` : "";
+  try {
+    const response = await fetch(`/api/export/summary${query}`);
+    const payload = await response.json();
+    exportSummary = Object.fromEntries((payload.datasets || []).map(item => [item.dataset, item]));
+  } catch (error) {
+    exportSummary = {};
+  }
+  renderExportList();
+}
+
+function renderExportList() {
+  const list = document.querySelector("#export-list");
+  if (!list) return;
+  const term = (document.querySelector("#export-search")?.value || "").trim().toLocaleLowerCase("tr");
+  const visible = EXPORT_DATASETS.filter(dataset => {
+    const summary = exportSummary[dataset.key];
+    if (exportGroup !== "all" && summary && summary.group !== exportGroup) return false;
+    if (!term) return true;
+    return `${t(dataset.title)} ${t(dataset.description)}`.toLocaleLowerCase("tr").includes(term);
+  });
+  list.innerHTML = visible.map(dataset => {
+    const summary = exportSummary[dataset.key] || {};
+    const selected = exportSelection.has(dataset.key);
+    const count = summary.count === undefined || summary.count === null
+      ? "—"
+      : `${Number(summary.count).toLocaleString(currentLanguage === "en" ? "en-GB" : "tr-TR")} ${t("kayıt")}`;
+    return `<li><button type="button" class="export-row" data-export="${dataset.key}" aria-pressed="${selected}">
+      <span class="export-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg></span>
+      <span class="export-row-icon${dataset.tone === "alarm" ? " is-alarm" : summary.group === "system" ? " is-system" : ""}" aria-hidden="true"><svg viewBox="0 0 24 24">${dataset.icon}</svg></span>
+      <span class="export-row-copy"><strong>${t(dataset.title)}</strong><span>${t(dataset.description)}</span></span>
+      <span class="export-row-count${summary.count ? "" : " is-empty"}">${count}</span>
+    </button></li>`;
+  }).join("");
+  document.querySelector("#export-empty").hidden = visible.length > 0;
+  list.querySelectorAll("[data-export]").forEach(row => {
+    row.addEventListener("click", () => {
+      const key = row.dataset.export;
+      if (exportSelection.has(key)) exportSelection.delete(key); else exportSelection.add(key);
+      row.setAttribute("aria-pressed", String(exportSelection.has(key)));
+      updateExportBar();
+    });
+  });
+  updateExportBar();
+}
+
+function updateExportBar() {
+  const count = exportSelection.size;
+  const label = document.querySelector("#export-selection");
+  const button = document.querySelector("#export-download");
+  const note = document.querySelector("#export-period-note");
+  if (!label || !button) return;
+  label.textContent = count ? `${count} ${t("veri türü seçildi")}` : t("Veri türü seçin");
+  label.classList.toggle("is-ready", count > 0);
+  button.disabled = count === 0;
+  // One dataset is one file; more than one can only be an archive, and the button says
+  // which is about to land rather than leaving it to be discovered in the downloads folder.
+  document.querySelector("#export-download-label").textContent = count > 1 ? t("Zip olarak indir") : t("Dışa aktar");
+  // A period cannot narrow the datasets that describe the setup rather than a measurement.
+  const unfiltered = [...exportSelection].filter(key => exportSummary[key] && !exportSummary[key].period_filtered);
+  const ranged = Boolean(exportPeriodBounds());
+  note.hidden = !(ranged && unfiltered.length);
+  if (!note.hidden) {
+    const names = unfiltered.map(key => t(EXPORT_DATASETS.find(item => item.key === key).title)).join(", ");
+    note.textContent = `${names}: ${t("bu veri türlerinin bir dönemi yoktur; seçilen aralıktan bağımsız olarak tamamı iner.")}`;
+  }
+}
+
+function downloadExport() {
+  if (!exportSelection.size) return;
+  const format = document.querySelector("#export-format").value;
+  const bounds = exportPeriodBounds();
+  const range = bounds ? `&since=${encodeURIComponent(bounds.since)}` : "";
+  const chosen = [...exportSelection];
+  const href = chosen.length === 1
+    ? `/api/export/${chosen[0]}.${format}${range ? `?${range.slice(1)}` : ""}`
+    : `/api/export/bundle?datasets=${chosen.join(",")}&file_format=${format}${range}`;
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+document.querySelectorAll("[data-export-group]").forEach(button => {
+  button.addEventListener("click", () => {
+    exportGroup = button.dataset.exportGroup;
+    document.querySelectorAll("[data-export-group]").forEach(other => other.classList.toggle("is-active", other === button));
+    renderExportList();
+  });
+});
+document.querySelector("#export-search")?.addEventListener("input", renderExportList);
+document.querySelector("#export-period")?.addEventListener("change", refreshExports);
+document.querySelector("#export-download")?.addEventListener("click", downloadExport);
+
 document.querySelector("#restore-backup").addEventListener("click", restoreBackup);
+
+// The chosen file is only visible through the label now, and a restore button that can be
+// pressed with nothing selected is a button that exists to show an error.
+document.querySelector("#restore-file")?.addEventListener("change", event => {
+  const file = event.target.files[0];
+  const name = document.querySelector("#restore-file-name");
+  const label = document.querySelector(".backup-file");
+  name.textContent = file ? file.name : t("Dosya seçilmedi");
+  label.classList.toggle("has-file", Boolean(file));
+  document.querySelector("#restore-backup").disabled = !file;
+});
 document.querySelector("#settings-form").addEventListener("submit", saveSettings);
+document.querySelectorAll("[data-settings-tab]").forEach(button =>
+  button.addEventListener("click", () => showSettingsTab(button.dataset.settingsTab)));
+document.querySelector("#settings-form").addEventListener("input", markSettingsDirty);
+document.querySelector("#settings-form").addEventListener("change", markSettingsDirty);
 document.querySelector("#password-form").addEventListener("submit", changePassword);
+let guidanceSearchTimer = null;
+document.querySelector("#guidance-search").addEventListener("input", () => {
+  // The retriever runs on the server now, so a request per keystroke is wasteful.
+  clearTimeout(guidanceSearchTimer);
+  guidanceSearchTimer = setTimeout(renderGuidanceNotes, 180);
+});
 document.querySelector("#worker-form").addEventListener("submit", addWorker);
 document.querySelector("#force-password-form").addEventListener("submit", submitForcedPassword);
 document.querySelector("#force-password-logout").addEventListener("click", async () => {
@@ -2488,7 +3908,16 @@ document.querySelector("#preview-as-worker").addEventListener("click", () => set
 document.querySelector("#language-toggle").addEventListener("click", toggleLanguage);
 document.querySelector("#reopen-guide").addEventListener("click", openGuide);
 document.querySelector("#close-guide").addEventListener("click", closeGuide);
-document.querySelector("#complete-guide").addEventListener("click", completeGuide);
+document.querySelector("#skip-guide").addEventListener("click", skipGuide);
+document.querySelector("#guide-back").addEventListener("click", retreatGuide);
+document.querySelector("#complete-guide").addEventListener("click", advanceGuide);
+document.querySelector("#onboarding-dialog").addEventListener("keydown", event => {
+  // Enter in a text field would otherwise do nothing here: there is no form to submit,
+  // and the step's own button is what it is reaching for.
+  if (event.key !== "Enter" || event.target.tagName === "BUTTON") return;
+  event.preventDefault();
+  advanceGuide();
+});
 loadSettings(true).finally(() => {
   if (!refreshTimer) refreshTimer = setInterval(refresh, refreshSeconds * 1000);
   refresh(); refreshContext(); refreshAlarms(); restoreViewFromHash();
@@ -2508,6 +3937,14 @@ fetch("/api/me").then((response) => response.json()).then((user) => {
   currentRole = user.role || "owner";
   managesAccounts = Boolean(user.manages_accounts);
   document.querySelector("#workers-section").hidden = !managesAccounts;
+  // Whether this browser's own language choice counts depends on the role, and the role
+  // arrives after the settings do — so a field worker's preference is applied here rather
+  // than in applySettings, which cannot yet know who is reading.
+  const preferredLanguage = currentRole === "owner" ? null : localStorage.getItem("waggle-language");
+  if (preferredLanguage && currentSettings && preferredLanguage !== currentLanguage) {
+    applySettings({...currentSettings, language: preferredLanguage});
+  }
+  renderSettingsSidebar();
   document.body.classList.toggle("is-worker", currentRole === "worker");
   if (user.must_change_password) document.querySelector("#force-password-dialog").showModal();
   if (user.manages_accounts) refreshWorkers();

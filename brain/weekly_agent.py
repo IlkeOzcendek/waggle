@@ -14,7 +14,7 @@ import time
 
 import requests
 
-from brain.foundry_report import generate_agent_report
+from brain.foundry_report import generate_agent_report, unload_after_report, unload_model
 
 def _parse_timestamp(value: str) -> datetime: # convertion to utc datetime format
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -29,6 +29,7 @@ def run_period_report(
     now: datetime | None = None,
     report_type: str = "weekly",
     event_id: int | None = None,
+    on_progress = None,
 ) -> list[dict]:
     
     """
@@ -63,32 +64,53 @@ def run_period_report(
         return []
 
     created = []
-    for language in ("tr", "en"):
-        report = generate_agent_report(events, language, alias)
+    try:
+        for language in ("tr", "en"):
+            report = generate_agent_report(events, language, alias, on_progress)
 
-        payload = { # The report gathers the date, summary, recommendations, hive type, language, model and source information into a single payload ready to be sent to the API
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "summary": report.summary,
-            "recommendations": report.recommendations,
-            "hive_ids": report.hive_ids,
-            "language": report.language,
-            "generator": report.generator,
-            "grounding_sources": report.assessment.get("knowledge_ids", []),
-            "report_type": report_type,
-            "event_id": event_id if report_type == "event" else None,
-        }
+            payload = { # The report gathers the date, summary, recommendations, hive type, language, model and source information into a single payload ready to be sent to the API
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary": report.summary,
+                "recommendations": report.recommendations,
+                "hive_ids": report.hive_ids,
+                "language": report.language,
+                "generator": report.generator,
+                "grounding_sources": report.assessment.get("knowledge_ids", []),
+                "report_type": report_type,
+                "event_id": event_id if report_type == "event" else None,
+                # The model's own decision travels with the report instead of being dropped
+                # once the prose has been written.
+                "assessment": {
+                    "priority": report.assessment.get("priority", "routine"),
+                    "pattern": report.assessment.get("pattern", "within_baseline"),
+                    "queen_loss_compatible": bool(report.assessment.get("queen_loss_compatible")),
+                    "inspection_required": bool(report.assessment.get("inspection_required")),
+                    "action_codes": report.assessment.get("action_codes", []),
+                    "cross_check_model": (report.assessment.get("cross_check") or {}).get("model"),
+                    "cross_check_agreed": (report.assessment.get("cross_check") or {}).get("agreed"),
+                },
+            }
 
-        posted = requests.post( # It sends or registers the payload report we prepared to the API and then place the response from the API into the posted file
-            f"{panel_url.rstrip('/')}/api/reports",
-            json = payload,
-            headers = headers,
-            timeout = 10,
-        )
+            posted = requests.post( # It sends or registers the payload report we prepared to the API and then place the response from the API into the posted file
+                f"{panel_url.rstrip('/')}/api/reports",
+                json = payload,
+                headers = headers,
+                timeout = 10,
+            )
 
-        posted.raise_for_status()
+            posted.raise_for_status()
 
-        created.append(posted.json())
+            created.append(posted.json())
+    finally:
+        # A run holds one or two models in memory for as long as the process lives. On a
+        # machine where that memory is needed elsewhere the reload is the cheaper cost, so
+        # the release is offered — and left off, because for a panel generating reports all
+        # day the reload is the expensive one.
+        if unload_after_report():
+            for name in dict.fromkeys([alias, os.getenv("WAGGLE_CROSS_CHECK_MODEL", "")]):
+                if name:
+                    unload_model(name)
 
     return created
 

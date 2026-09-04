@@ -97,6 +97,9 @@ def main() -> int:
     parser.add_argument("--anomaly-fraction", required=True, type=float)
     parser.add_argument("--consecutive-anomalies", type=int, default=0)
     parser.add_argument("--source-file")
+    # Which acoustic model decided this event. It is the first link in the chain a
+    # report rests on, so an edge service should name it rather than leave it blank.
+    parser.add_argument("--model", help="Kararı veren model dosyası, örn. H4.onnx")
     parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--device-key", default=DEFAULT_KEY)
     parser.add_argument("--queue", type=Path, default=DEFAULT_QUEUE)
@@ -118,6 +121,7 @@ def main() -> int:
         "anomaly_fraction": args.anomaly_fraction,
         "consecutive_anomalies": args.consecutive_anomalies,
         "source_file": args.source_file,
+        "model": args.model,
     }
     if post_event(args.url, args.device_key, event):
         print(

@@ -50,6 +50,11 @@ def export_model(artifact, output: Path): # After creating a single pipeline wit
         "alarm_windows": artifact["alarm_windows"],
         "hive_id": artifact.get("hive_id") or "",
         "source_doi": artifact.get("source_doi") or "",
+        # The decision score's deepest possible value is -1 - offset_, because the raw
+        # isolation score never falls below -1. Carrying the offset is therefore what lets
+        # inference turn a score into "how far past the boundary this window sits" once the
+        # estimator itself is gone and only the graph remains.
+        "score_offset": float(artifact["model"].offset_),
     }
 
     for key, value in metadata.items():
@@ -63,27 +68,45 @@ def export_model(artifact, output: Path): # After creating a single pipeline wit
 
     onnx.save_model(model, output)
 
-def verify(artifact, onnx_path: Path, csv_path: Path): # It feeds the same CSV data to the Joblib model and then to the ONNX model, compares the results and if there is no difference, it accepts the ONNX transformation as verified=True.
+# The graph runs in float32 where the estimator runs in float64, so the two scores agree
+# to about a ten-thousandth rather than exactly. Anything looser than this is a conversion
+# fault, not a rounding difference.
+SCORE_TOLERANCE = 1e-2
+
+def verify(artifact, onnx_path: Path, csv_path: Path): # It feeds the same CSV data to the Joblib model and then to the ONNX model, compares both the decisions and the scores behind them and accepts the conversion as verified=True only when neither has drifted
     data = pd.read_csv(csv_path)
 
     values = data[artifact["feature_columns"]].to_numpy(dtype = np.float64)
 
-    expected = artifact["model"].predict(artifact["scaler"].transform(values))
+    scaled = artifact["scaler"].transform(values)
+
+    expected = artifact["model"].predict(scaled)
+
+    # The severity the panel reports is read off this score, so parity of the labels alone
+    # no longer covers what the exported graph is used for.
+    expected_scores = artifact["model"].decision_function(scaled)
 
     session = ort.InferenceSession(str(onnx_path), providers = ["CPUExecutionProvider"])
 
-    actual = session.run(
-        [session.get_outputs()[0].name],
+    actual, actual_scores = session.run(
+        ["label", "scores"],
         {session.get_inputs()[0].name: values.astype(np.float32)},
-    )[0].reshape(-1)
+    )
+
+    actual = np.asarray(actual).reshape(-1)
+
+    actual_scores = np.asarray(actual_scores).reshape(-1)
 
     differences = int(np.count_nonzero(expected != actual))
+
+    score_drift = float(np.abs(expected_scores - actual_scores).max())
 
     return {
         "verification_rows": int(len(values)),
         "different_decisions": differences,
         "decision_agreement": float(np.mean(expected == actual)),
-        "verified": differences == 0,
+        "maximum_score_difference": score_drift,
+        "verified": differences == 0 and score_drift <= SCORE_TOLERANCE,
     }
 
 def main():
