@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import logging
 import re
@@ -7,7 +9,7 @@ import tempfile
 import threading
 from typing import Literal
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -17,9 +19,9 @@ from starlette.background import BackgroundTask
 import requests
 
 from .database import EventStore
-from .exports import build_export
+from .exports import build_bundle, build_export, export_summary
 from .report_pdf import build_report_pdf
-from .models import AlarmInspectionIn, AppSettings, ComponentStatus, DashboardState, Device, DeviceCreate, EnrollmentStatus, HealthConfirmation, HealthConfirmationIn, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SensorAnalysis, SystemStatus, WeatherState
+from .models import AlarmInspectionIn, AppSettings, ComponentHistory, ComponentStatus, ContactRecord, DashboardState, Device, DeviceCreate, EnrollmentStatus, HealthConfirmation, HealthConfirmationIn, Hive, HiveCreate, HiveEvent, HiveEventIn, HiveUpdate, Report, ReportIn, SensorAnalysis, SystemStatus, WeatherState
 from .auth import (
     ADMIN_USERNAME,
     generate_recovery_code,
@@ -32,6 +34,7 @@ from .auth import (
     hash_password,
     login_attempt_guard,
     read_session,
+    read_session_details,
     verify_credentials,
     verify_password,
     verify_device_key,
@@ -43,16 +46,20 @@ from pydantic import BaseModel, Field
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("WAGGLE_DB", BASE_DIR.parent / "data" / "waggle.db"))
 store = EventStore(DB_PATH)
-WEATHER_LAT = float(os.getenv("WAGGLE_LAT", "41.0082"))
-WEATHER_LON = float(os.getenv("WAGGLE_LON", "28.9784"))
 WEATHER_LOCATION = os.getenv("WAGGLE_LOCATION", "Gölbaşı Arılığı")
-weather_cache: tuple[datetime, WeatherState] | None = None
+# When it was read, what it said, and the coordinates it was read for. WAGGLE_LAT and
+# WAGGLE_LON now only seed a new panel's settings row — see database.DEFAULT_LATITUDE —
+# because a position the panel cannot be told about is a position it reports wrongly.
+weather_cache: tuple[datetime, WeatherState, tuple[float, float]] | None = None
 logger = logging.getLogger("waggle")
 MAX_BACKUP_BYTES = int(os.getenv("WAGGLE_MAX_BACKUP_BYTES", str(100 * 1024 * 1024)))
 DEVICE_STALE_SECONDS = int(os.getenv("WAGGLE_DEVICE_STALE_SECONDS", "900"))
 REPORT_STALE_SECONDS = int(os.getenv("WAGGLE_REPORT_STALE_SECONDS", "691200"))
 SENSOR_MODEL_PATH = Path(os.getenv("WAGGLE_SENSOR_MODEL", BASE_DIR.parent.parent / "results" / "mendeley_isolation_monitor.onnx"))
 HIVE_PROFILE_DIR = Path(os.getenv("WAGGLE_HIVE_PROFILE_DIR", BASE_DIR.parent.parent / "results" / "hive_profiles"))
+# The recorded joblib-versus-ONNX decision comparison. It is the evidence behind "the
+# conversion did not change any decision", which the panel asserted nowhere.
+ONNX_PARITY_REPORT = Path(os.getenv("WAGGLE_ONNX_PARITY_REPORT", BASE_DIR.parent.parent / "results" / "mendeley_onnx_parity.json"))
 MAX_SENSOR_AUDIO_BYTES = int(os.getenv("WAGGLE_MAX_SENSOR_AUDIO_BYTES", str(25 * 1024 * 1024)))
 # Model-backed report generation stays off unless it is switched on deliberately,
 # so a panel without a local model never advertises a capability it does not have.
@@ -60,6 +67,12 @@ LLM_ENABLED = os.getenv("WAGGLE_LLM_ENABLED", "0") == "1"
 LLM_MODEL = os.getenv("WAGGLE_LLM_MODEL", "phi-3.5-mini")
 DEVICE_KEY = os.getenv("WAGGLE_DEVICE_KEY", "waggle-device-demo")
 REPORT_GENERATION: dict = {
+    # Which device Foundry runs the model on, and how many characters it has written so
+    # far. The panel showed a climbing counter and nothing else; both of these are facts it
+    # can state instead of implying progress it could not see.
+    "device": None,
+    "written_characters": 0,
+    "written_at": None,
     "running": False,
     "created": 0,
     "error": None,
@@ -103,6 +116,9 @@ async def lifespan(_: FastAPI):
     if DEMO_MODE:
         salt, digest = hash_password(DEMO_PASSWORD)
         store.ensure_demo_owner(ADMIN_USERNAME, ADMIN_USERNAME, salt, digest)
+        # Sample hives exist for the demo and only for the demo. A real panel starts with
+        # nothing, so the first hive a beekeeper sees is one they added themselves.
+        store.seed_sample_hives()
     # The demo account signs in whether or not demo mode is on, so the well-known password
     # it was seeded with is the panel's weakest point until someone changes it. Saying so
     # at every start is the price of keeping that account always reachable.
@@ -117,6 +133,43 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Waggle API", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+# Every asset link in the shells carries a ?v= marker that tells a browser its cached copy
+# is stale. It used to be a number edited by hand beside each <link> and <script>, so a
+# release could ship new code behind an old marker and every browser would keep serving the
+# previous interface — the panel looked unchanged while the server had already changed.
+# Forgetting is the normal case, so the marker is computed from the files themselves.
+ASSET_MARKER = re.compile(r"(/static/[A-Za-z0-9_.\-]+)\?v=[A-Za-z0-9]+")
+_asset_version: tuple[tuple[float, ...], str] | None = None
+
+
+def asset_version() -> str:
+    """A short digest of the shipped assets, recomputed only when one of them changes."""
+    global _asset_version
+    # Every asset the shells carry a ?v= marker for, not only the code: the illustrations
+    # are versioned in the markup the same way, so leaving them out meant a replaced image
+    # kept the previous release's marker and browsers kept serving the old one.
+    static = BASE_DIR / "static"
+    files = sorted(
+        path for pattern in ("*.css", "*.js", "*.png", "*.svg") for path in static.glob(pattern)
+    )
+    stamps = tuple(path.stat().st_mtime_ns for path in files)
+    if _asset_version and _asset_version[0] == stamps:
+        return _asset_version[1]
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.read_bytes())
+    version = digest.hexdigest()[:10]
+    _asset_version = (stamps, version)
+    return version
+
+
+def shell(name: str) -> Response:
+    """One of the three HTML shells, with its asset markers pointing at what is on disk."""
+    html = (BASE_DIR / "static" / name).read_text(encoding="utf-8")
+    return Response(content=ASSET_MARKER.sub(rf"\1?v={asset_version()}", html),
+                    media_type="text/html; charset=utf-8")
 
 
 class LoginRequest(BaseModel):
@@ -200,6 +253,12 @@ def worker_may_write(path: str) -> bool:
     return any(pattern.match(path) for pattern in WORKER_WRITE_PATHS)
 
 
+def _stamp_for(username: str) -> str:
+    """The password stamp to mint a session with, empty for an account without a row."""
+    account = store.user_account(username)
+    return account["password_stamp"] if account else ""
+
+
 def effective_account(username: str) -> dict | None:
     """The account behind a session, or None when the username has no row of its own."""
     return store.user_account(username)
@@ -257,14 +316,20 @@ async def require_login(request: Request, call_next):
     path = request.url.path
     if path in PUBLIC_PATHS or path.startswith("/static/"):
         return await call_next(request)
-    username = read_session(request.cookies.get(COOKIE_NAME))
-    if username:
+    session = read_session_details(request.cookies.get(COOKIE_NAME))
+    if session:
+        username, stamp = session
         # Sessions are signed tokens with no server-side record, so this lookup is what
         # makes deactivating a worker take effect now instead of whenever their cookie
         # happens to expire.
         account = effective_account(username)
         if account is not None and not account["active"]:
             return _rejected(path, "Hesabınız devre dışı bırakıldı.", 401)
+        # Someone who changed their password — or had it reset for them, after losing the
+        # laptop it was signed in on — expects that to end the other sessions. Without this
+        # the old cookie keeps working until it expires on its own.
+        if account is not None and stamp != account["password_stamp"]:
+            return _rejected(path, "Parolanız değişti; lütfen yeniden giriş yapın.", 401)
         request.state.username = username
         request.state.account = account
         if request.method in UNSAFE_METHODS and account is not None:
@@ -303,7 +368,12 @@ def _rejected(path: str, detail: str, status_code: int) -> Response:
 def login_page(request: Request) -> Response:
     if read_session(request.cookies.get(COOKIE_NAME)):
         return RedirectResponse("/", status_code=303)
-    return FileResponse(BASE_DIR / "static" / "login.html")
+    # A panel with no account yet cannot be signed in to, and the sign-in screen offering
+    # "Tekrar hoş geldiniz" to someone who has never been here is the first thing a new
+    # installation showed. The one thing they can do is the one they are sent to.
+    if not store.has_users() and not DEMO_MODE:
+        return RedirectResponse("/setup", status_code=303)
+    return shell("login.html")
 
 
 @app.get("/setup", include_in_schema=False)
@@ -312,7 +382,7 @@ def setup_page(request: Request) -> Response:
         return RedirectResponse("/", status_code=303)
     if store.has_users():
         return RedirectResponse("/login", status_code=303)
-    return FileResponse(BASE_DIR / "static" / "setup.html")
+    return shell("setup.html")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -364,7 +434,7 @@ def login(credentials: LoginRequest, request: Request) -> Response:
     response = JSONResponse({"username": credentials.username})
     response.set_cookie(
         COOKIE_NAME,
-        create_session(credentials.username, session_seconds),
+        create_session(credentials.username, session_seconds, _stamp_for(credentials.username)),
         max_age=session_seconds,
         httponly=True,
         samesite="lax",
@@ -396,7 +466,7 @@ def create_owner_account(payload: OwnerSetupRequest, request: Request) -> Respon
     response = JSONResponse({"username": username, "display_name": display_name}, status_code=201)
     response.set_cookie(
         COOKIE_NAME,
-        create_session(username),
+        create_session(username, stamp=_stamp_for(username)),
         max_age=SESSION_SECONDS,
         httponly=True,
         samesite="lax",
@@ -425,7 +495,18 @@ def change_password(payload: PasswordChangeRequest, request: Request) -> Respons
     # Choosing their own password is what turns a handed-over account into one person.
     if not store.set_user_password(username, new_salt, new_hash, must_change=False):
         raise HTTPException(status_code=404, detail="Hesap bulunamadı")
-    return Response(status_code=204)
+    # Every session opened with the old password is now stale, this one included, so the
+    # person who just chose the password gets a fresh cookie rather than a sign-in screen.
+    response = Response(status_code=204)
+    response.set_cookie(
+        COOKIE_NAME,
+        create_session(username, stamp=_stamp_for(username)),
+        max_age=SESSION_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("WAGGLE_SECURE_COOKIE", "0") == "1",
+    )
+    return response
 
 
 def require_owner(request: Request) -> str:
@@ -596,7 +677,7 @@ def current_user(request: Request) -> dict[str, object]:
 
 @app.get("/", include_in_schema=False)
 def panel() -> FileResponse:
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    return shell("index.html")
 
 
 @app.get("/api/health")
@@ -608,21 +689,142 @@ def health() -> dict[str, str]:
 def guidance_notes(
     language: Literal["tr", "en"] = "tr",
     ids: str | None = Query(default=None, max_length=500),
+    q: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=10, ge=1, le=50),
 ) -> list[dict]:
     """The reviewed local notes a report was grounded in.
 
     A report stores only the ids of the passages it used. The panel needs their text to
     show what the assessment actually rested on — an assessment you cannot trace back to
     its sources is just an opinion with a logo on it.
+
+    `q` runs the same retriever a report is grounded with, so searching the base and
+    grounding a report rank passages identically. The panel used to filter the list with a
+    plain substring match, which meant the one place a person can inspect the knowledge
+    base behaved unlike the retrieval it was there to explain.
     """
-    from brain.local_rag import load_knowledge
+    from brain.local_rag import guidance_category, guidance_title, load_knowledge, search_guidance
+
+    entries = {entry["id"]: entry for entry in load_knowledge()}
+
+    def presented(entry: dict) -> dict:
+        # The note's own name and subject, not the retriever's index. The id still travels
+        # because a report cites it, but it is no longer the only thing a reader is given.
+        return {
+            "id": entry["id"],
+            "title": guidance_title(entry, language),
+            "category": guidance_category(entry, language),
+            "text": entry[language],
+            "tags": entry["tags"],
+        }
+
+    if q and q.strip():
+        return [
+            presented(entries[found["id"]])
+            for found in search_guidance(q.strip(), language, limit=limit)
+            if found["id"] in entries
+        ]
 
     wanted = {item.strip() for item in ids.split(",") if item.strip()} if ids else None
-    return [
-        {"id": entry["id"], "text": entry[language], "tags": entry["tags"]}
-        for entry in load_knowledge()
-        if wanted is None or entry["id"] in wanted
-    ]
+    return [presented(entry) for entry in entries.values() if wanted is None or entry["id"] in wanted]
+
+
+@app.get("/api/events/{event_id}/guidance")
+def event_guidance(
+    event_id: int,
+    language: Literal["tr", "en"] = "tr",
+    limit: int = Query(default=2, ge=1, le=5),
+) -> list[dict]:
+    """The local notes that fit one event.
+
+    Retrieval was reachable only through report generation, so an alarm sitting on the
+    screen carried no guidance until a weekly report was written about it. The same
+    retriever, given the single event, answers immediately and without a model.
+    """
+    from brain.local_rag import retrieve_guidance
+
+    event = store.event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Olay bulunamadı")
+    return retrieve_guidance([event.model_dump()], language, limit=limit)
+
+
+def _resolved(path: Path) -> Path:
+    return path if path.is_absolute() else BASE_DIR.parent.parent / path
+
+
+def onnx_parity() -> dict | None:
+    """The recorded joblib-versus-ONNX decision comparison for the reference model.
+
+    The export refuses to write a model whose decisions differ, so this file is the
+    evidence that the conversion preserved them. It existed in the repository and was
+    shown nowhere, which left the panel's strongest verifiable claim unstated.
+    """
+    try:
+        report = json.loads(ONNX_PARITY_REPORT.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict) or not report.get("verified"):
+        return None
+    # The row count is read out of a file on disk, so it is coerced here rather than where
+    # it is formatted: a hand-edited or half-written report must leave the status page
+    # saying "not verified", never raise out of it.
+    try:
+        rows = int(report["verification_rows"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {**report, "verification_rows": rows} if rows > 0 else None
+
+
+def acoustic_model_status() -> ComponentStatus:
+    """Whether the model that decides every event is actually there.
+
+    The component carrying this name only ever checked how recently an event arrived, so a
+    deleted or unreadable model file left the panel reporting a healthy acoustic pipeline
+    right up until the next recording failed.
+    """
+    missing: list[str] = []
+    packaged = _resolved(SENSOR_MODEL_PATH)
+    if not packaged.exists():
+        missing.append(SENSOR_MODEL_PATH.name)
+    profiles = store.monitoring_profiles()
+    for profile in profiles:
+        # Path("") resolves to the directory the panel runs from, which exists — so an
+        # empty model path would read as a healthy model rather than a missing one.
+        stored = (profile["model_path"] or "").strip()
+        if not stored or not _resolved(Path(stored)).exists():
+            missing.append(f'{profile["hive_id"]}: {Path(stored).name if stored else "—"}')
+
+    # A parity report is returned only when it is complete and says the decisions matched,
+    # so its presence is the whole question here.
+    parity = onnx_parity()
+    parity_part = (
+        f'referans modelde {parity["verification_rows"]} satırda karar eşleşmesi doğrulandı'
+        if parity else "karar eşleşmesi raporu bulunamadı"
+    )
+    hives_part = f"{len(profiles)} kovan kendi profiliyle izleniyor"
+    # A profile is published only after its ONNX conversion is compared with the joblib
+    # model it came from, so a stored comparison is the per-hive counterpart of the
+    # reference model's parity report. Said only when there is one to say.
+    verified = [profile for profile in profiles if (profile["verification"] or {}).get("different_decisions") == 0]
+    facts = [hives_part]
+    if verified:
+        facts.append(f"{len(verified)}/{len(profiles)} kovan profili karar eşleşmesiyle doğrulandı")
+
+    if missing:
+        return ComponentStatus(
+            key="acoustic-model", name="Akustik model (ONNX)", status="warning",
+            summary="Akustik model dosyası eksik",
+            detail=" · ".join([f'model dosyası bulunamadı: {", ".join(missing)}', parity_part, *facts]),
+        )
+    return ComponentStatus(
+        key="acoustic-model", name="Akustik model (ONNX)",
+        # A model that is present but whose conversion was never verified is a weaker
+        # claim than one that was, and the panel should not present them identically.
+        status="ok" if parity else "waiting",
+        summary="Akustik model hazır" if parity else "Karar eşleşmesi doğrulanmadı",
+        detail=" · ".join(["ONNX Runtime", parity_part, *facts]),
+    )
 
 
 @app.get("/api/system-status", response_model=SystemStatus)
@@ -635,22 +837,96 @@ def system_status() -> SystemStatus:
     device_status = integration_freshness(last_event, DEVICE_STALE_SECONDS)
     report_status = integration_freshness(last_report, REPORT_STALE_SECONDS)
     device_messages = {
-        "ok": ("Canlı veri alınıyor", "Cihaz veya model sonuçları güvenli bağlantı üzerinden panele ulaşıyor."),
-        "waiting": ("İlk veri bekleniyor", "Kovan cihazı veya akustik analiz servisi ilk olayı gönderdiğinde bağlantı zamanı burada görünecek."),
-        "warning": ("Cihaz verisi gecikiyor", "Son olay beklenen süreden eski. Kovan cihazını, modeli ve yerel ağ bağlantısını kontrol edin."),
+        "ok": ("Canlı veri alınıyor", "Kovan cihazları kayıtları panele göndermeye devam ediyor."),
+        "waiting": ("İlk veri bekleniyor", "Kovan cihazı ilk kaydı gönderdiğinde bağlantı zamanı burada görünecek."),
+        "warning": ("Cihaz verisi gecikiyor", "Beklenen aralıkta yeni kayıt gelmedi; zincir burada duruyor."),
     }
     report_messages = {
         "ok": ("Rapor entegrasyonu çalışıyor", "Üretilen değerlendirme raporları panele kaydediliyor."),
         "waiting": ("İlk rapor bekleniyor", "İlk haftalık değerlendirme gönderildiğinde burada son rapor zamanı görünecek."),
         "warning": ("Rapor güncel değil", "Son haftalık değerlendirme beklenen süreden eski. Rapor üretim akışını kontrol edin."),
     }
+    device_remedies = {
+        "waiting": ["Kovana bir dinleme cihazı ekleyin", "Kovanlarım sayfasından ilk kaydı gönderin"],
+        "warning": ["Kovan cihazının açık ve şarjlı olduğunu doğrulayın",
+                    "Cihazın yerel ağa bağlı olduğunu kontrol edin",
+                    "Kovanlarım sayfasından elle bir kayıt göndererek zinciri sınayın"],
+    }
+    report_remedies = {
+        "waiting": ["Raporlar sayfasından ilk değerlendirmeyi üretin"],
+        "warning": ["Foundry Local sunucusunun çalıştığını doğrulayın",
+                    "Raporlar sayfasından elle bir rapor üretmeyi deneyin",
+                    "Sunucu günlüğünde model çağrısının hatasına bakın"],
+    }
+    # The order is the chain the data actually travels, not a layout choice: a microphone
+    # records, the ONNX profile decides, the decision is stored, the report engine reads it
+    # and the panel shows it. Returned in that order so a reader can see where it stopped
+    # rather than which tile happens to be red.
     components = [
-        ComponentStatus(key="panel", name="Waggle paneli", status="ok", summary="Panel çalışıyor", detail="Kullanıcı arayüzü ve API istekleri yanıt veriyor."),
-        ComponentStatus(key="database", name="Veri kayıt sistemi", status="ok" if database_ok else "warning", summary="Veritabanı sağlam" if database_ok else "Veritabanını kontrol edin", detail=f'{counts["hives"]} kovan, {counts["events"]} olay ve {counts["reports"]} rapor kayıtlı.'),
-        ComponentStatus(key="device", name="Kovan cihazları ve yapay zekâ modeli", status=device_status, summary=device_messages[device_status][0], detail=device_messages[device_status][1], last_seen_at=last_event),
-        ComponentStatus(key="reports", name="Haftalık yapay zekâ raporları", status=report_status, summary=report_messages[report_status][0], detail=report_messages[report_status][1], last_seen_at=last_report),
+        ComponentStatus(key="device", name="Kovan cihazları", status=device_status,
+                        summary=device_messages[device_status][0], detail=device_messages[device_status][1],
+                        last_seen_at=last_event, stale_after_seconds=DEVICE_STALE_SECONDS,
+                        remedies=device_remedies.get(device_status, []), has_history=True),
+        acoustic_model_status(),
+        ComponentStatus(key="database", name="Veri kayıt sistemi", status="ok" if database_ok else "warning",
+                        summary="Veritabanı sağlam" if database_ok else "Veritabanını kontrol edin",
+                        detail=f'{counts["hives"]} kovan, {counts["events"]} olay ve {counts["reports"]} rapor kayıtlı.',
+                        remedies=[] if database_ok else [
+                            "Dışa Aktar sayfasından hemen bir SQLite yedeği alın",
+                            "Sağlam bir yedekten geri yükleyin"]),
+        ComponentStatus(key="reports", name="Haftalık yapay zekâ raporları", status=report_status,
+                        summary=report_messages[report_status][0], detail=report_messages[report_status][1],
+                        last_seen_at=last_report, stale_after_seconds=REPORT_STALE_SECONDS,
+                        remedies=report_remedies.get(report_status, []), has_history=True),
+        ComponentStatus(key="panel", name="Waggle paneli", status="ok", summary="Panel çalışıyor",
+                        detail="Kullanıcı arayüzü ve API istekleri yanıt veriyor."),
     ]
     return SystemStatus(overall="ok" if all(item.status == "ok" for item in components) else "attention", components=components)
+
+
+# A recording can only be stamped with the weather of roughly the moment it was taken.
+# An event posted for a timestamp further back than this gets no weather at all, because
+# the current conditions are not the conditions it was recorded in.
+WEATHER_STAMP_WINDOW = timedelta(minutes=30)
+
+
+def observed_weather() -> WeatherState | None:
+    """Current conditions, or None when the operator has weather off or the service is unreachable.
+
+    Stamping must never cost an event: a recording is worth keeping without its weather.
+    The privacy setting is the part that is not negotiable, and it is enforced where it
+    already was — inside the endpoint this delegates to, so weather off means nothing
+    leaves the device here either.
+    """
+    try:
+        return weather()
+    except HTTPException:
+        return None
+
+
+def with_conditions(event: HiveEventIn) -> HiveEventIn:
+    """The event, carrying the conditions it was recorded in when those can be known.
+
+    Values the caller already sent win: an edge device that read its own sensor knows the
+    hive's own air better than the panel's single configured coordinate does.
+    """
+    already = (event.temperature_c, event.humidity_percent, event.wind_kmh, event.weather_code)
+    if any(value is not None for value in already):
+        return event
+    recorded_at = event.timestamp
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    if abs(datetime.now(timezone.utc) - recorded_at) > WEATHER_STAMP_WINDOW:
+        return event
+    current = observed_weather()
+    if current is None:
+        return event
+    return event.model_copy(update={
+        "temperature_c": current.temperature_c,
+        "humidity_percent": current.humidity_percent,
+        "wind_kmh": current.wind_kmh,
+        "weather_code": current.weather_code,
+    })
 
 
 @app.post("/api/events", response_model=HiveEvent, status_code=201)
@@ -658,7 +934,7 @@ def create_event(event: HiveEventIn) -> HiveEvent:
     if not store.has_hive(event.hive_id):
         raise HTTPException(status_code=404, detail="Kovan bulunamadı")
     try:
-        return store.add(event)
+        return store.add(with_conditions(event))
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Olay kaydedilemedi") from exc
 
@@ -735,11 +1011,15 @@ async def analyze_sensor_recording(
                 try:
                     training_values, training_names = store.enrollment_features(hive_id)
                     onnx_path = HIVE_PROFILE_DIR / f"{hive_id}.onnx"
-                    train_verified_profile(
+                    # Training refuses to publish a profile whose ONNX decisions differ
+                    # from the joblib ones it was converted from, and returned the
+                    # comparison to a caller that dropped it. It is the evidence behind
+                    # this hive's own model, so it is stored with the profile.
+                    verification = train_verified_profile(
                         training_values, training_names, hive_id,
                         HIVE_PROFILE_DIR / f"{hive_id}.joblib", onnx_path,
                     )
-                    progress = store.activate_profile(hive_id, str(onnx_path))
+                    progress = store.activate_profile(hive_id, str(onnx_path), verification)
                 except Exception as error:  # noqa: BLE001 - recording is kept either way
                     # Reporting success while training failed hides the fault behind a
                     # full progress bar, so the reason travels back with the response.
@@ -765,18 +1045,28 @@ async def analyze_sensor_recording(
         if not model_path.exists():
             raise HTTPException(status_code=503, detail="ONNX sensör modeli bulunamadı")
 
-        previous = next((item for item in store.recent(500) if item.hive_id == hive_id), None)
+        # This hive's own last event, not the newest few hundred across the apiary. A hive
+        # that had been quiet while its neighbours recorded fell out of that window, and
+        # the run of consecutive anomalies behind WATCH and ALARM silently restarted at
+        # zero — in the one place where the whole claim is that the change persisted.
+        previous = store.latest_event(hive_id)
         initial_run = previous.consecutive_anomalies if previous else 0
         result = analyze_wav(model_path, uploaded_path, initial_run)
         store.touch_device(device_id)
-        event = store.add(HiveEventIn(
+        event = store.add(with_conditions(HiveEventIn(
             hive_id=hive_id,
             timestamp=datetime.now(timezone.utc),
             status=result["status"],
             anomaly_fraction=result["anomaly_fraction"],
+            # Null when this hive's profile predates the stored decision offset; the ratio
+            # is still measured, only the depth behind it is unavailable.
+            anomaly_severity=result["anomaly_severity"],
             consecutive_anomalies=result["consecutive_anomalies"],
             source_file=f"phone:{safe_name}",
-        ))
+            # The event carries the ONNX profile that decided it: a report reading these
+            # rows can then say which model measured them, not only which one wrote about them.
+            model=model_path.name,
+        )))
         return SensorAnalysis(
             mode="monitoring", event=event,
             windows=result["windows"],
@@ -849,7 +1139,15 @@ def update_settings(settings: AppSettings) -> AppSettings:
         "panel_name": settings.panel_name.strip(),
         "location_name": settings.location_name.strip(),
     })
-    saved = AppSettings(**store.update_settings(cleaned.model_dump()))
+    # Only the fields the caller actually sent are written. The coordinates arrived after
+    # the first clients did, and a body written without them would otherwise be read as
+    # asking for the model's defaults — quietly moving the apiary to another town.
+    provided = set(settings.model_fields_set)
+    payload = {
+        **store.settings(),
+        **{name: value for name, value in cleaned.model_dump().items() if name in provided},
+    }
+    saved = AppSettings(**store.update_settings(payload))
     weather_cache = None
     return saved
 
@@ -861,7 +1159,10 @@ def list_hives(include_inactive: bool = False) -> list[Hive]:
 
 @app.post("/api/hives", response_model=Hive, status_code=201)
 def create_hive(hive: HiveCreate) -> Hive:
-    return store.add_hive(hive)
+    try:
+        return store.add_hive(hive)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.put("/api/hives/{hive_id}", response_model=Hive)
@@ -897,6 +1198,21 @@ def delete_hive(hive_id: str) -> dict:
     if footprint["hive"].active:
         raise HTTPException(status_code=409, detail="Önce kovanı arşivleyin, sonra kalıcı olarak silin")
     removed = store.delete_hive(hive_id)
+    # The trained profile is the one part of a hive that lives outside the database. It was
+    # left on disk under the hive's id, so the next hive to be given that id would be
+    # monitored by the deleted colony's model until its own was trained over it.
+    model_path = removed.pop("model_path", "")
+    artefacts = {HIVE_PROFILE_DIR / f"{hive_id}.onnx", HIVE_PROFILE_DIR / f"{hive_id}.joblib"}
+    if model_path:
+        # The stored path wins where it differs: a profile trained before the directory
+        # was reconfigured still sits wherever it was written.
+        recorded = _resolved(Path(model_path))
+        artefacts |= {recorded, recorded.with_suffix(".joblib")}
+    for artefact in artefacts:
+        try:
+            artefact.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Kovan profili silinemedi: %s", artefact)
     logger.warning("Hive %s deleted permanently (%s events, %s devices)", hive_id, removed["events"], removed["devices"])
     return {"hive_id": hive_id, "deleted": True, **removed}
 
@@ -924,7 +1240,19 @@ def list_reports(limit: int = Query(default=10, ge=1, le=100)) -> list[Report]:
 def _run_report_generation(panel_url: str, report_type: str, event_id: int | None) -> None:
     """Generate a report through the brain pipeline and record the outcome."""
     try:
+        from brain.foundry_report import model_device
         from brain.weekly_agent import run_period_report
+
+        # Read once, at the start: the catalogue lookup shells out to the Foundry CLI, and
+        # the status endpoint is polled every few seconds while the run is in progress.
+        REPORT_GENERATION["device"] = model_device(LLM_MODEL)
+
+        def written(characters: int) -> None:
+            # The count alone cannot say whether a run is stalled: it only ever grows, so
+            # one character written early would clear the flag for the rest of the run.
+            # When it last grew is the fact that answers the question.
+            REPORT_GENERATION["written_characters"] = characters
+            REPORT_GENERATION["written_at"] = datetime.now(timezone.utc).isoformat()
 
         created = run_period_report(
             panel_url,
@@ -932,6 +1260,7 @@ def _run_report_generation(panel_url: str, report_type: str, event_id: int | Non
             LLM_MODEL,
             report_type=report_type,
             event_id=event_id,
+            on_progress=written,
         )
         REPORT_GENERATION.update(
             running=False,
@@ -975,6 +1304,9 @@ def generate_report(request: Request, options: ReportGenerateIn | None = None) -
             created=0,
             error=None,
             generators=[],
+            device=None,
+            written_characters=0,
+            written_at=None,
             started_at=datetime.now(timezone.utc).isoformat(),
             finished_at=None,
         )
@@ -993,17 +1325,56 @@ def generate_report(request: Request, options: ReportGenerateIn | None = None) -
 @app.get("/api/reports/generation-status")
 def report_generation_status() -> dict:
     state = dict(REPORT_GENERATION)
-    elapsed = None
+    elapsed = silent = None
     if state["started_at"]:
         reference = state["finished_at"] or datetime.now(timezone.utc).isoformat()
         elapsed = int((datetime.fromisoformat(reference) - datetime.fromisoformat(state["started_at"])).total_seconds())
+        last_sign_of_life = state["written_at"] or state["started_at"]
+        silent = int((datetime.fromisoformat(reference) - datetime.fromisoformat(last_sign_of_life)).total_seconds())
     return {
         "enabled": LLM_ENABLED,
         "model": LLM_MODEL,
         "elapsed_seconds": elapsed,
-        "stalled": bool(state["running"] and elapsed is not None and elapsed > REPORT_GENERATION_STALL_SECONDS),
+        "silent_seconds": silent,
+        # Silence is measured from the last token the model wrote, not from the start of
+        # the run. A run still writing is slow; a run that stopped writing is stalled, and
+        # until the answer arrived token by token the two were the same long wait.
+        "stalled": bool(state["running"] and silent is not None and silent > REPORT_GENERATION_STALL_SECONDS),
         **state,
     }
+
+
+# Only the two components that receive something from outside keep a record of past
+# contacts. The others are asked, not heard from, so there is nothing to list.
+HISTORY_COMPONENTS = {"device", "reports"}
+
+
+@app.get("/api/system-status/{component}/history", response_model=ComponentHistory)
+def component_history(component: str, limit: int = Query(default=20, ge=1, le=100)) -> ComponentHistory:
+    """When this component last got through, and what it brought.
+
+    "Cihaz verisi gecikiyor" is a claim about a pattern, and a beekeeper deciding whether
+    to walk to the apiary needs the pattern rather than the claim: a device that has been
+    silent for an hour after months of hourly contact is a different problem from one that
+    was always sporadic.
+    """
+    if component not in HISTORY_COMPONENTS:
+        raise HTTPException(status_code=404, detail="Bu bileşenin bağlantı geçmişi tutulmuyor")
+    if component == "device":
+        hive_names = {hive.hive_id: hive.name for hive in store.hives(include_inactive=True)}
+        entries = [
+            ContactRecord(at=event.timestamp, status=event.status,
+                          label=hive_names.get(event.hive_id, event.hive_id))
+            for event in store.recent(limit)
+        ]
+    else:
+        labels = {"event": "Olay raporu", "daily": "Günlük rapor", "weekly": "Haftalık rapor"}
+        entries = [
+            ContactRecord(at=report.created_at, status="ok",
+                          label=labels.get(report.report_type, report.report_type))
+            for report in store.reports(limit)
+        ]
+    return ComponentHistory(component=component, entries=entries)
 
 
 @app.get("/api/reports/{report_id}/pdf")
@@ -1022,13 +1393,64 @@ def download_report_pdf(report_id: int, preview: bool = False) -> Response:
     return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'{disposition}; filename="{filename}"'})
 
 
-@app.get("/api/export/{dataset}.{file_format}")
-def export_data(dataset: str, file_format: str) -> Response:
-    if dataset not in {"hives", "events", "alarms", "reports"}:
+EXPORT_DATASETS = {"hives", "events", "alarms", "reports", "confirmations", "guidance", "enrollment", "devices"}
+
+
+def _export_range(since: str | None, until: str | None) -> tuple[datetime | None, datetime | None]:
+    """The requested period, as bounds the exporter can compare against.
+
+    An unreadable date is refused rather than ignored: silently exporting everything when
+    someone asked for a week hands them a file that does not answer their question.
+    """
+    def bound(value: str | None, end_of_day: bool):
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Tarih aralığı okunamadı") from None
+        if len(value) == 10:  # A plain date means the whole day it names.
+            parsed = parsed.replace(hour=23, minute=59, second=59) if end_of_day else parsed
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    start, end = bound(since, False), bound(until, True)
+    if start and end and start > end:
+        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitişten sonra olamaz")
+    return start, end
+
+
+@app.get("/api/export/summary")
+def export_overview(since: str | None = None, until: str | None = None) -> dict:
+    """What each dataset holds, so the page can show a count beside every choice."""
+    start, end = _export_range(since, until)
+    return {"datasets": export_summary(store, start, end)}
+
+
+@app.get("/api/export/bundle")
+def export_bundle(datasets: str, file_format: str = "csv", since: str | None = None,
+                  until: str | None = None) -> Response:
+    """Several datasets in one archive. A CSV holds one table, so more than one means a zip."""
+    chosen = [name for name in dict.fromkeys(datasets.split(",")) if name]
+    unknown = [name for name in chosen if name not in EXPORT_DATASETS]
+    if not chosen or unknown:
         raise HTTPException(status_code=404, detail="Dışa aktarma veri kümesi bulunamadı")
     if file_format not in {"csv", "json"}:
         raise HTTPException(status_code=404, detail="Dışa aktarma biçimi desteklenmiyor")
-    content, media_type, filename = build_export(store, dataset, file_format)
+    start, end = _export_range(since, until)
+    content, media_type, filename = build_bundle(store, chosen, file_format, start, end)
+    return Response(content=content, media_type=media_type,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/api/export/{dataset}.{file_format}")
+def export_data(dataset: str, file_format: str, since: str | None = None,
+                until: str | None = None) -> Response:
+    if dataset not in EXPORT_DATASETS:
+        raise HTTPException(status_code=404, detail="Dışa aktarma veri kümesi bulunamadı")
+    if file_format not in {"csv", "json"}:
+        raise HTTPException(status_code=404, detail="Dışa aktarma biçimi desteklenmiyor")
+    start, end = _export_range(since, until)
+    content, media_type, filename = build_export(store, dataset, file_format, start, end)
     return Response(
         content=content,
         media_type=media_type,
@@ -1037,7 +1459,13 @@ def export_data(dataset: str, file_format: str) -> Response:
 
 
 @app.get("/api/backup/database")
-def backup_database() -> FileResponse:
+def backup_database(request: Request) -> FileResponse:
+    # The write allowlist made every unlisted endpoint owner-only, and reading had no
+    # equivalent. This file is the whole database, password and recovery-code hashes
+    # included, so a field worker — including one still on the temporary password the
+    # owner handed them, since that gate only guards writes — could take the owner's
+    # credentials off the panel and work on them somewhere else.
+    require_owner(request)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     temporary = tempfile.NamedTemporaryFile(prefix="waggle-backup-", suffix=".db", delete=False)
     backup_path = Path(temporary.name)
@@ -1053,6 +1481,22 @@ def backup_database() -> FileResponse:
         filename=f"waggle-backup-{timestamp}.db",
         background=BackgroundTask(backup_path.unlink, missing_ok=True),
     )
+
+
+# How many pre-restore snapshots to keep. Each one is a full copy of the database, and
+# nothing ever removed them: a panel restored a few times carried every version of itself
+# forward for good. The recent ones are the ones anybody reaches for.
+RECOVERY_BACKUP_KEEP = 10
+
+
+def prune_recovery_backups(directory: Path, keep: int = RECOVERY_BACKUP_KEEP) -> None:
+    """Drop all but the newest snapshots. Named by timestamp, so the sort is the age."""
+    snapshots = sorted(directory.glob("waggle-before-restore-*.db"), reverse=True)
+    for stale in snapshots[keep:]:
+        try:
+            stale.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Eski kurtarma yedeği silinemedi: %s", stale.name)
 
 
 @app.post("/api/backup/restore")
@@ -1076,6 +1520,7 @@ async def restore_database(request: Request) -> dict[str, str]:
         recovery_directory.mkdir(parents=True, exist_ok=True)
         recovery_path = recovery_directory / f"waggle-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
         store.backup_to(recovery_path)
+        prune_recovery_backups(recovery_directory)
         try:
             store.restore_from(uploaded_path)
             store.initialize()
@@ -1104,14 +1549,18 @@ def weather() -> WeatherState:
             detail="Çevrimiçi hava durumu Ayarlar bölümünden etkinleştirilmedi",
         )
     now = datetime.now()
-    if weather_cache and (now - weather_cache[0]).total_seconds() < 600:
+    # The cache remembers which coordinates it holds. Keying it on time alone meant that
+    # for ten minutes after someone corrected the apiary's position the panel kept
+    # answering with the previous place's conditions — and stamping them onto events.
+    coordinates = (settings.latitude, settings.longitude)
+    if weather_cache and weather_cache[2] == coordinates and (now - weather_cache[0]).total_seconds() < 600:
         return weather_cache[1]
     try:
         response = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
-                "latitude": WEATHER_LAT,
-                "longitude": WEATHER_LON,
+                "latitude": settings.latitude,
+                "longitude": settings.longitude,
                 "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
                 "timezone": "auto",
             },
@@ -1127,18 +1576,7 @@ def weather() -> WeatherState:
             weather_code=current["weather_code"],
             observed_at=datetime.fromisoformat(current["time"]),
         )
-        weather_cache = (now, state)
+        weather_cache = (now, state, coordinates)
         return state
     except (requests.RequestException, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Hava durumu şu anda alınamıyor") from exc
-
-
-@app.post("/api/demo", response_model=list[HiveEvent], status_code=201)
-def demo_scenario() -> list[HiveEvent]:
-    timestamp = datetime.now().astimezone().replace(microsecond=0)
-    scenario = [
-        HiveEventIn(hive_id="H1", timestamp=timestamp, status="NORMAL", anomaly_fraction=0.08),
-        HiveEventIn(hive_id="H2", timestamp=timestamp, status="WATCH", anomaly_fraction=0.68, consecutive_anomalies=5),
-        HiveEventIn(hive_id="H3", timestamp=timestamp, status="ALARM", anomaly_fraction=1.0, consecutive_anomalies=30),
-    ]
-    return [store.add(event) for event in scenario]

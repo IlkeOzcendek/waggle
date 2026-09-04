@@ -13,6 +13,10 @@ def event() -> dict[str, object]:
     roll = random.random()
     status = "ALARM" if roll < 0.23 else "WATCH" if roll < 0.33 else "NORMAL"
     anomaly_fraction = random.uniform(.85, 1.0) if status == "ALARM" else random.uniform(.35, .8) if status == "WATCH" else random.uniform(0, .2)
+    # The ranges are the ones the packaged profile actually produces: about .05 across a
+    # healthy stretch of the published recording and about .37 across the queen-loss
+    # stretch, peaking at .47. A demo that invented the scale would teach the wrong one.
+    anomaly_severity = random.uniform(.30, .47) if status == "ALARM" else random.uniform(.12, .30) if status == "WATCH" else random.uniform(.02, .10)
     hive_id = random.choice(["H1", "H2", "H3"])
     moment = datetime.now(timezone.utc).replace(microsecond=0)
     return {
@@ -20,8 +24,10 @@ def event() -> dict[str, object]:
         "timestamp": moment.isoformat(),
         "status": status,
         "anomaly_fraction": round(anomaly_fraction, 2),
+        "anomaly_severity": round(anomaly_severity, 2),
         "consecutive_anomalies": 30 if status == "ALARM" else 5 if status == "WATCH" else 0,
         "source_file": f"phone:{hive_id.lower()}-{moment:%Y%m%d-%H%M}.wav",
+        "model": "mendeley_isolation_monitor.onnx",
     }
 
 

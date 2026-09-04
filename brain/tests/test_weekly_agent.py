@@ -49,5 +49,78 @@ class WeeklyAgentTest(unittest.TestCase):
 
         self.assertEqual(post.call_args_list[0].kwargs["json"]["grounding_sources"], ["alarm-inspection"]) # verification that the information source used in the payload of the initial report was sent correctly
 
+class AssessmentPayloadTest(unittest.TestCase):
+    """The decision the model reached has to survive the trip to the panel.
+
+    The panel's model-decision box, the report PDF and the report export all read this one
+    block. If the mapping in `weekly_agent` drifts, every one of them quietly shows a
+    default instead — a report that says "routine" because a field was renamed looks
+    exactly like a report that is genuinely routine.
+    """
+
+    ASSESSMENT = {
+        "priority": "immediate",
+        "pattern": "persistent_acoustic_change",
+        "queen_loss_compatible": True,
+        "inspection_required": True,
+        "action_codes": ["inspect_hive", "check_queen"],
+        "knowledge_ids": ["alarm-interpretation", "season-spring-swarm"],
+        "cross_check": {"model": "qwen2.5-1.5b", "agreed": False, "resolved_to": "immediate"},
+    }
+
+    def _post_payload(self, assessment):
+        with patch("brain.weekly_agent.generate_agent_report") as generate, \
+             patch("brain.weekly_agent.requests.post") as post, \
+             patch("brain.weekly_agent.requests.get") as get:
+            get.return_value = Mock(
+                json=lambda: [{"hive_id": "H3", "status": "ALARM",
+                               "timestamp": "2026-08-28T12:00:00+00:00"}],
+                raise_for_status=lambda: None,
+            )
+            post.side_effect = [
+                Mock(json=lambda: {"id": 1}, raise_for_status=lambda: None),
+                Mock(json=lambda: {"id": 2}, raise_for_status=lambda: None),
+            ]
+            generate.side_effect = [
+                ReportDraft("TR", ["Kontrol"], ["H3"], "tr", "agent:test", dict(assessment)),
+                ReportDraft("EN", ["Inspect"], ["H3"], "en", "agent:test", dict(assessment)),
+            ]
+            run_weekly_report("http://panel", "key", "test", NOW)
+            return post.call_args_list[0].kwargs["json"]
+
+    def test_the_decision_reaches_the_panel_intact(self):
+        assessment = self._post_payload(self.ASSESSMENT)["assessment"]
+        self.assertEqual(assessment["priority"], "immediate")
+        self.assertEqual(assessment["pattern"], "persistent_acoustic_change")
+        self.assertTrue(assessment["queen_loss_compatible"])
+        self.assertTrue(assessment["inspection_required"])
+        self.assertEqual(assessment["action_codes"], ["inspect_hive", "check_queen"])
+
+    def test_a_disagreeing_cross_check_is_reported_as_a_disagreement(self):
+        """Amber on the panel and 'the cautious reading was kept' in the PDF depend on this."""
+        assessment = self._post_payload(self.ASSESSMENT)["assessment"]
+        self.assertEqual(assessment["cross_check_model"], "qwen2.5-1.5b")
+        self.assertIs(assessment["cross_check_agreed"], False)
+
+    def test_without_a_second_model_the_cross_check_fields_stay_empty(self):
+        """An empty field must not be mistaken for two models that agreed."""
+        single = {key: value for key, value in self.ASSESSMENT.items() if key != "cross_check"}
+        assessment = self._post_payload(single)["assessment"]
+        self.assertIsNone(assessment["cross_check_model"])
+        self.assertIsNone(assessment["cross_check_agreed"])
+
+    def test_the_grounding_sources_travel_beside_the_decision(self):
+        payload = self._post_payload(self.ASSESSMENT)
+        self.assertEqual(payload["grounding_sources"],
+                         ["alarm-interpretation", "season-spring-swarm"])
+
+    def test_a_model_that_returned_nothing_usable_defaults_to_the_calm_reading(self):
+        """The deterministic fallback must not invent an alarm out of a missing field."""
+        assessment = self._post_payload({"knowledge_ids": []})["assessment"]
+        self.assertEqual(assessment["priority"], "routine")
+        self.assertEqual(assessment["pattern"], "within_baseline")
+        self.assertFalse(assessment["inspection_required"])
+
+
 if __name__ == "__main__":
     unittest.main()

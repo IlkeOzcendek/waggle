@@ -19,6 +19,9 @@ htmlcov/
 # Database
 *.db
 *.sqlite
+# WAL journal companions, written beside the database at runtime
+*.db-wal
+*.db-shm
 .waggle_pending_events.jsonl
 
 # Trained models, large files
@@ -29,6 +32,9 @@ models/
 # Runtime input and output
 inbox/
 events/
+# Scratch renders and generated documents from the report design tooling
+tmp/
+output/
 monitor_state.json
 *_state.json
 

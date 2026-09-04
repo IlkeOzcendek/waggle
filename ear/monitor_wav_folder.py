@@ -20,7 +20,7 @@ import time
 import numpy as np
 
 from wav_isolation_monitor import update_run, wav_features
-from model_runtime import anomaly_flags, load_monitor
+from model_runtime import load_monitor, severity_profile, window_decisions
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -30,7 +30,9 @@ from tools.send_event import deliver_event  # noqa: E402
 
 LOG_FIELDS = [
     "processed_at_utc", "hive_id", "wav", "sha256", "windows",
-    "anomaly_fraction", "initial_run", "final_run", "maximum_run", "status",
+    # How far the anomalous windows fell outside the profile, beside how many of them did.
+    "anomaly_fraction", "anomaly_severity", "peak_severity",
+    "initial_run", "final_run", "maximum_run", "status",
 ]
 
 def arguments(): # follow the WAV files using the trained model
@@ -89,15 +91,26 @@ def save_json_atomic(path, value): # It saves the Python data to a JSON file in 
 
     temporary.replace(path)
 
+def existing_fields(path): # It reads back the header a log was started with so a new column cannot shift every later row out of line
+    if not path.exists():
+        return None
+
+    with path.open("r", newline = "", encoding = "utf-8") as stream:
+        header = next(csv.reader(stream), None)
+
+    return header or None
+
 def append_log(path, row): # It adds the result of an operation as a new line to a CSV log file
     path.parent.mkdir(parents = True, exist_ok = True)
 
-    exists = path.exists()
+    # A log written before severity existed keeps its own columns. Appending today's wider
+    # row under yesterday's header would silently misalign the file for whoever reads it.
+    fields = existing_fields(path)
 
     with path.open("a", newline = "", encoding = "utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=LOG_FIELDS)
+        writer = csv.DictWriter(stream, fieldnames = fields or LOG_FIELDS, extrasaction = "ignore")
 
-        if not exists:
+        if fields is None:
             writer.writeheader()
 
         writer.writerow(row)
@@ -138,7 +151,9 @@ def scan(
         if names != artifact["feature_columns"]:
             raise SystemExit(f"Feature schema mismatch for {path}")
 
-        flags = anomaly_flags(artifact, values)
+        flags, scores = window_decisions(artifact, values)
+
+        severity = severity_profile(artifact, scores)
 
         initial = int(state["consecutive_anomalies"])
 
@@ -162,6 +177,8 @@ def scan(
             "processed_at_utc": processed_at,
             "hive_id": hive_id, "wav": path.name, "sha256": checksum,
             "windows": len(flags), "anomaly_fraction": f"{flags.mean():.6f}",
+            "anomaly_severity": "" if severity["anomaly_severity"] is None else f"{severity['anomaly_severity']:.6f}",
+            "peak_severity": "" if severity["peak_severity"] is None else f"{severity['peak_severity']:.6f}",
             "initial_run": initial, "final_run": final, "maximum_run": maximum,
             "status": status,
         }
@@ -173,8 +190,10 @@ def scan(
                 "timestamp": processed_at,
                 "status": status,
                 "anomaly_fraction": float(flags.mean()),
+                "anomaly_severity": severity["anomaly_severity"],
                 "consecutive_anomalies": final,
                 "source_file": path.name,
+                "model": artifact.get("model_file"),
             }
             delivered = deliver_event(event, panel_url, device_key, panel_queue)
             print(

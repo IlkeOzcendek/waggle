@@ -2,9 +2,10 @@
   "source_model": "results/mendeley_isolation_monitor.joblib",
   "onnx_model": "results/mendeley_isolation_monitor.onnx",
   "feature_count": 21,
-  "onnx_bytes": 3679791,
+  "onnx_bytes": 3679835,
   "verification_rows": 5400,
   "different_decisions": 0,
   "decision_agreement": 1.0,
+  "maximum_score_difference": 0.00030409904524109077,
   "verified": true
 }

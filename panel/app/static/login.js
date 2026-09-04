@@ -22,6 +22,8 @@ const loginCopy = {
     ready: "System ready", welcome: "Welcome back", hint: "Sign in to monitor your hives",
     username: "Username", password: "Password", signin: "Sign in",
     first_time: "Setting up Waggle for the first time?", create_owner: "Create owner account", signin_error: "Sign-in failed",
+    server_trouble: "We cannot complete your request right now. Please try again shortly.",
+    no_connection: "The panel could not be reached. Check that the server is running, then try again.",
     forgot: "Forgot my password", cancel: "Cancel", remember: "Keep me signed in",
     recovery_eyebrow: "PASSWORD RECOVERY", recovery_title: "Sign in with your recovery code",
     recovery_intro: "Enter the single-use code you generated in settings and choose a new password. The code stops working once it is used.",
@@ -37,6 +39,8 @@ const loginCopy = {
     ready: "Sistem hazır", welcome: "Tekrar hoş geldiniz", hint: "Kovanlarınızı izlemek için giriş yapın",
     username: "Kullanıcı adı", password: "Parola", signin: "Giriş yap",
     first_time: "Waggle'ı ilk kez mi kuruyorsunuz?", create_owner: "Sistem sahibi hesabı oluştur", signin_error: "Giriş yapılamadı",
+    server_trouble: "Şu anda isteğinizi tamamlayamıyoruz. Lütfen kısa bir süre sonra tekrar deneyin.",
+    no_connection: "Panele ulaşılamadı. Sunucunun çalıştığını doğrulayıp tekrar deneyin.",
     forgot: "Parolamı unuttum", cancel: "Vazgeç", remember: "Oturumumu açık tut",
     recovery_eyebrow: "PAROLA KURTARMA", recovery_title: "Kurtarma kodunuzla girin",
     recovery_intro: "Ayarlardan aldığınız tek kullanımlık kodu girin ve yeni parolanızı belirleyin. Kod kullanıldıktan sonra geçersiz olur.",
@@ -68,6 +72,32 @@ document.querySelector(".password-toggle").addEventListener("click", (event) => 
   password.type = password.type === "password" ? "text" : "password";
   event.currentTarget.setAttribute("aria-label", password.type === "password" ? "Parolayı göster" : "Parolayı gizle");
 });
+
+// The box already carries "Giriş yapılamadı" as its heading, so this line has to add
+// something rather than repeat it: what happened, and what to do next.
+//
+// A 500 answers in plain text rather than JSON, so parsing it first threw a parse error
+// that reached the screen — a beekeeper was shown "Unexpected token 'I'" where the panel
+// should have said it had failed. The status still matters when something is being
+// diagnosed, so it goes to the console, which is where it is looked for.
+// The panel answers in Turkish whatever language the screen is in, so an English reader
+// was told "Kullanıcı adı veya parola hatalı". These are the three the sign-in form can
+// receive; anything else is shown as the server wrote it, which beats showing nothing.
+const SERVER_DETAIL_EN = {
+  "Kullanıcı adı veya parola hatalı": "Incorrect username or password",
+  "Çok fazla başarısız giriş denemesi. Lütfen kısa süre sonra tekrar deneyin.":
+    "Too many failed sign-in attempts. Please try again shortly.",
+  "Bu hesap devre dışı. Kovanlık sahibine başvurun.":
+    "This account is disabled. Contact the apiary owner.",
+};
+
+async function failureMessage(response) {
+  const body = await response.json().catch(() => null);
+  const detail = body && typeof body.detail === "string" ? body.detail.trim() : "";
+  if (detail) return language === "en" ? (SERVER_DETAIL_EN[detail] || detail) : detail;
+  console.error(`Waggle: /api/login answered HTTP ${response.status}`);
+  return loginCopy[language].server_trouble;
+}
 
 fetch("/api/setup-status")
   .then((response) => response.json())
@@ -139,6 +169,8 @@ form.addEventListener("submit", async (event) => {
   button.disabled = true;
   button.textContent = language === "tr" ? "Giriş yapılıyor…" : "Signing in…";
   try {
+    // A request that never completes rejects with the browser's own wording ("Failed to
+    // fetch"), which reached the screen in English and said nothing a person could act on.
     const response = await fetch("/api/login", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
@@ -146,11 +178,9 @@ form.addEventListener("submit", async (event) => {
         password: form.password.value,
         remember: document.querySelector("#remember-me").checked,
       }),
-    });
-    if (!response.ok) {
-      const body = await response.json();
-      throw new Error(body.detail || (language === "tr" ? "Giriş yapılamadı" : "Sign-in failed"));
-    }
+    }).catch(() => null);
+    if (!response) throw new Error(loginCopy[language].no_connection);
+    if (!response.ok) throw new Error(await failureMessage(response));
     window.location.replace("/");
   } catch (error) {
     errorText.textContent = error.message;

@@ -128,6 +128,41 @@ class NarrativeValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "markup or a link"):
             _validate_narrative(payload(summary=padded("H3 detayı: https://example.com")), ALLOWED, "tr")
 
+    def test_the_example_handed_back_verbatim_is_rejected(self):
+        """A small model will sometimes return the example instead of writing a report.
+
+        Measured on a real run: phi-3.5-mini returned the Turkish example word for word,
+        and every other check here passed it — the example is deliberately well formed,
+        names real hives and hedges correctly. On a period that happens to resemble it the
+        copy reads as a correct report; on any other period it describes hives doing
+        something they are not.
+        """
+        example = ("H1 kovanı dönem boyunca normal aralıkta kaldı. H2 için gelişen bir akustik "
+                   "değişim izleniyor. H3 kovanında kalıcı bir değişim ölçüldü; bu kraliçe "
+                   "kaybıyla uyumlu olabilir, tek başına kesin tanı değildir.")
+
+        with self.assertRaises(ValueError):
+            _validate_narrative(payload(summary=example), ALLOWED, "tr", False, example)
+
+    def test_a_copy_cannot_hide_behind_spacing_or_case(self):
+        example = ("H1 kovanı dönem boyunca normal aralıkta kaldı. H2 için gelişen bir akustik "
+                   "değişim izleniyor. H3 kovanında kalıcı bir değişim ölçüldü; bu kraliçe "
+                   "kaybıyla uyumlu olabilir, tek başına kesin tanı değildir.")
+
+        with self.assertRaises(ValueError):
+            _validate_narrative(payload(summary=example.upper()), ALLOWED, "tr", False, example)
+
+    def test_prose_of_its_own_is_still_accepted_when_an_example_was_shown(self):
+        """The guard must reject the copy, not the writing it was meant to encourage."""
+        written = ("H3 kovanında ölçülen değişim dönem boyunca sürdü ve kayıtların tamamına "
+                   "yayıldı; bu kraliçe kaybıyla uyumlu olabilir, kesin tanı değildir. H1 ve H2 "
+                   "kendi normal aralıklarında kaldı ve ek bir işlem gerektirmiyor.")
+        example = "H1 kovanı dönem boyunca normal aralıkta kaldı."
+
+        summary, _ = _validate_narrative(payload(summary=written), ALLOWED, "tr", False, example)
+
+        self.assertEqual(summary, written)
+
     def test_prompt_leakage_is_rejected(self):
         for summary in (
             "H3 için kesinlik iddiası etmeden, yalnızca yeni olgu alınmalı ve fiziksel olarak incelenmelidir.",

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from panel.app.database import EventStore
 from panel.app.auth import hash_password, verify_password
-from panel.app.models import HiveCreate, HiveEventIn, HiveUpdate, ReportIn
+from panel.app.models import DeviceCreate, HealthConfirmationIn, HiveCreate, HiveEventIn, HiveUpdate, ReportIn
 
 
 class EventStoreTest(unittest.TestCase):
@@ -14,6 +14,9 @@ class EventStoreTest(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.store = EventStore(Path(self.tempdir.name) / "events.db")
         self.store.initialize()
+        # The sample hives are no longer created for every database, so a test that
+        # relies on them asks for them: the dependency is stated rather than inherited.
+        self.store.seed_sample_hives()
 
     def test_first_owner_can_only_be_created_once(self):
         self.assertFalse(self.store.has_users())
@@ -119,6 +122,37 @@ class EventStoreTest(unittest.TestCase):
         restored = self.store.set_hive_active("H1", True)
         self.assertTrue(restored.active)
         self.assertTrue(self.store.has_hive("H1"))
+
+    def test_deleting_a_hive_that_has_been_learning_takes_its_recordings_with_it(self):
+        """A hive is deleted through its whole footprint, in an order the schema allows.
+
+        Enrollment recordings name the device that made them. They were deleted after the
+        device was, which no foreign key was being enforced to notice: the rows survived
+        pointing at a device that no longer existed. Now that the connection enforces them
+        the wrong order raises instead, so this is the test that a hive with a microphone
+        and a few recordings behind it can still be removed at all.
+        """
+        device = self.store.add_device("H1", DeviceCreate(name="Saha telefonu", kind="phone"))
+        self.store.add_health_confirmation("H1", HealthConfirmationIn(evidence="queen_seen"))
+        self.store.add_enrollment_recording(
+            "H1", device.device_id, "kayit.wav", [[1.0, 2.0]], ["f1", "f2"]
+        )
+        self.store.add(HiveEventIn(
+            hive_id="H1", timestamp=datetime.now(timezone.utc), status="NORMAL", anomaly_fraction=.1
+        ))
+        self.store.set_hive_active("H1", False)
+
+        removed = self.store.delete_hive("H1")
+
+        self.assertEqual(removed["events"], 1)
+        self.assertEqual(removed["devices"], 1)
+        self.assertIsNone(self.store.hive_footprint("H1"))
+        with self.store.connect() as connection:
+            for table in ("enrollment_recordings", "devices", "health_confirmations", "hive_profiles"):
+                left = connection.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE hive_id = ?", ("H1",)
+                ).fetchone()[0]
+                self.assertEqual(left, 0, f"{table} still holds rows for the deleted hive")
 
     def test_online_backup_preserves_a_consistent_snapshot(self):
         self.store.add(
@@ -285,6 +319,114 @@ class AcknowledgementAttributionTest(unittest.TestCase):
         self.assertIn("confirmed_by", confirmations)
 
 
+class EventsSchemaDriftTest(unittest.TestCase):
+    """Three paths can hand the panel an events table that is behind the code.
+
+    An older database, the legacy rebuild that recreates the table from a hardcoded column
+    list, and a restored backup taken before a column existed. Only the first was covered,
+    so the other two produced the same failure: a restore or an upgrade that looks fine,
+    then an insert refused on a column the schema is certain about.
+    """
+
+    CURRENT = {"acknowledged_at", "inspection_result", "inspection_note",
+               "consecutive_anomalies", "source_file", "acknowledged_by", "model"}
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.root = Path(self.tempdir.name)
+        self.now = datetime.now(timezone.utc)
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    @staticmethod
+    def _columns(path: Path) -> set[str]:
+        connection = sqlite3.connect(path)
+        try:
+            return {row[1] for row in connection.execute("PRAGMA table_info(events)")}
+        finally:
+            connection.close()
+
+    def _write_event(self, store: EventStore) -> None:
+        stored = store.add(HiveEventIn(hive_id="H1", timestamp=self.now, status="NORMAL",
+                                       anomaly_fraction=0.1, model="reference.onnx"))
+        self.assertEqual(store.event(stored.id).model, "reference.onnx")
+
+    def test_the_legacy_rebuild_keeps_every_column_added_since_it_was_written(self):
+        """The rebuild creates its own table, so the later columns must land on that one."""
+        legacy = self.root / "legacy.db"
+        connection = sqlite3.connect(legacy)
+        connection.executescript(
+            """CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hive_id TEXT NOT NULL CHECK (hive_id IN ('H1', 'H2', 'H3')),
+                timestamp TEXT NOT NULL,
+                event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
+                confidence REAL NOT NULL, alindi TEXT NOT NULL, acknowledged_at TEXT);
+            INSERT INTO events (hive_id, timestamp, event, confidence, alindi)
+            VALUES ('H1', '2026-01-01T00:00:00+00:00', 'healthy', 0.1, '2026-01-01T00:00:00+00:00');"""
+        )
+        connection.commit()
+        connection.close()
+
+        store = EventStore(legacy)
+        store.initialize()
+        store.seed_sample_hives()
+
+        self.assertTrue(self.CURRENT <= self._columns(legacy))
+        # The rebuild exists to widen the hive_id constraint; the rows must survive it.
+        self.assertEqual(len(store.recent()), 1)
+        self._write_event(store)
+
+    def test_the_legacy_rebuild_leaves_acknowledgement_attribution_writable(self):
+        legacy = self.root / "attribution.db"
+        connection = sqlite3.connect(legacy)
+        connection.executescript(
+            """CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hive_id TEXT NOT NULL CHECK (hive_id IN ('H1', 'H2', 'H3')),
+                timestamp TEXT NOT NULL,
+                event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
+                confidence REAL NOT NULL, alindi TEXT NOT NULL, acknowledged_at TEXT);"""
+        )
+        connection.commit()
+        connection.close()
+
+        store = EventStore(legacy)
+        store.initialize()
+        store.seed_sample_hives()
+        alarm = store.add(HiveEventIn(hive_id="H3", timestamp=self.now, status="ALARM",
+                                      anomaly_fraction=0.95, consecutive_anomalies=30))
+        acknowledged = store.acknowledge(alarm.id, "no_issue_found", "Kraliçe görüldü", acknowledged_by="ilke")
+        self.assertEqual(acknowledged.acknowledged_by, "ilke")
+
+    def test_restoring_a_backup_older_than_a_column_does_not_break_the_next_recording(self):
+        """The copy replaces the live schema with the backup's, which may be behind."""
+        live = EventStore(self.root / "live.db")
+        live.initialize()
+        live.seed_sample_hives()
+
+        backup = self.root / "old-backup.db"
+        live.backup_to(backup)
+        connection = sqlite3.connect(backup)
+        connection.executescript(
+            """ALTER TABLE events RENAME TO events_replaced;
+            CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, hive_id TEXT NOT NULL, timestamp TEXT NOT NULL,
+                event TEXT NOT NULL CHECK (event IN ('healthy', 'queenless_suspected', 'uncertain')),
+                confidence REAL NOT NULL, consecutive_anomalies INTEGER NOT NULL DEFAULT 0,
+                source_file TEXT, alindi TEXT NOT NULL, acknowledged_at TEXT,
+                inspection_result TEXT, inspection_note TEXT, acknowledged_by TEXT);
+            DROP TABLE events_replaced;"""
+        )
+        connection.commit()
+        connection.close()
+
+        live.restore_from(backup)
+
+        self.assertTrue(self.CURRENT <= self._columns(self.root / "live.db"))
+        self._write_event(live)
+
 class LegacyUserTableTest(unittest.TestCase):
     """A panel created before workers existed has to keep working."""
 
@@ -317,3 +459,39 @@ class LegacyUserTableTest(unittest.TestCase):
             self.assertEqual(
                 sorted(user["role"] for user in store.users()), ["owner", "worker"]
             )
+
+
+class EmptyPanelTest(unittest.TestCase):
+    """A real panel starts with nothing in it."""
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.store = EventStore(Path(self.tempdir.name) / "fresh.db")
+        self.store.initialize()
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_a_new_database_has_no_hives(self):
+        """The sample hives used to arrive with every database, and their profiles were
+        marked as monitoring — so a beekeeper's first launch claimed three trained hives
+        that had never recorded anything."""
+        self.assertEqual(self.store.hives(), [])
+        self.assertEqual(self.store.summaries(), [])
+
+    def test_the_first_hive_a_user_adds_is_the_first_hive(self):
+        hive = self.store.add_hive(HiveCreate(name="Kendi Kovanım"))
+        self.assertEqual(hive.hive_id, "H1")
+        self.assertEqual([item.hive_id for item in self.store.hives()], ["H1"])
+
+    def test_a_freshly_added_hive_is_not_presented_as_monitored(self):
+        hive = self.store.add_hive(HiveCreate(name="Kendi Kovanım"))
+        status = self.store.enrollment_status(hive.hive_id)
+        self.assertFalse(status.can_monitor)
+        self.assertEqual(status.recording_count, 0)
+
+    def test_seeding_is_explicit_and_repeatable(self):
+        self.store.seed_sample_hives()
+        self.assertEqual([item.hive_id for item in self.store.hives()], ["H1", "H2", "H3"])
+        self.store.seed_sample_hives()
+        self.assertEqual(len(self.store.hives()), 3)

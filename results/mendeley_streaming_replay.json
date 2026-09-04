@@ -22,5 +22,5 @@
       "alarm_completion_window": 30
     }
   ],
-  "interpretation": "latency is measured from recording start not queen removal time"
+  "interpretation": "latency is measured from recording start, not queen-removal time"
 }

@@ -30,6 +30,9 @@ class SensorRecordingTest(unittest.TestCase):
         self.store = EventStore(Path(self.tempdir.name) / "sensor.db")
 
         self.store.initialize()
+        # The sample hives are no longer created for every database, so a test that
+        # relies on them asks for them: the dependency is stated rather than inherited.
+        self.store.seed_sample_hives()
 
         self.model = Path(self.tempdir.name) / "monitor.onnx"
 
@@ -44,6 +47,10 @@ class SensorRecordingTest(unittest.TestCase):
             "status": "WATCH",
             "windows": 12,
             "anomaly_fraction": .75,
+            # How far the deviating windows fell outside the profile, read off the ONNX
+            # graph's second output beside the decision itself.
+            "anomaly_severity": .41,
+            "peak_severity": .58,
             "consecutive_anomalies": 5,
             "maximum_consecutive_anomalies": 5,
         }
@@ -61,6 +68,15 @@ class SensorRecordingTest(unittest.TestCase):
         self.assertEqual(response.event.status, "WATCH")
         self.assertEqual(response.event.source_file, "phone:phone.wav")
         self.assertEqual(self.store.recent()[0].hive_id, "H2")
+        # The ONNX profile that decided this travels with the event, so a report reading
+        # these rows can name the model that measured them and not only the one that wrote
+        # about them.
+        self.assertTrue(response.event.model.endswith(".onnx"))
+        # Depth is stored beside the ratio: two events at 75% are not the same measurement
+        # and the panel used to record them as if they were.
+        self.assertEqual(response.event.anomaly_severity, .41)
+        self.assertEqual(self.store.recent()[0].anomaly_severity, .41)
+        self.assertEqual(self.store.recent()[0].model, response.model)
 
     def test_non_wav_upload_is_rejected(self): # It tests whether if a non WAV .m4a file is not accepted when sent to the system
         request = SimpleNamespace(headers = {}, body = lambda: _async_value(b"not audio"))
@@ -195,6 +211,9 @@ class SensorRecordingTest(unittest.TestCase):
             joblib_path.write_bytes(b"joblib")
 
             onnx_path.write_bytes(b"onnx")
+            # Training compares the ONNX decisions with the joblib ones it converted and
+            # hands the comparison back; the panel used to drop it on the floor.
+            return {"hive_id": _hive_id, "windows": 96, "features": 21, "different_decisions": 0}
 
         train.side_effect = create_models
 
@@ -212,6 +231,10 @@ class SensorRecordingTest(unittest.TestCase):
         self.assertEqual(response.model, f"{hive.hive_id}.onnx")
 
         train.assert_called_once()
+
+        profile = next(item for item in self.store.monitoring_profiles() if item["hive_id"] == hive.hive_id)
+        self.assertEqual(profile["verification"]["different_decisions"], 0)
+        self.assertEqual(profile["verification"]["windows"], 96)
 
 async def _async_value(value):
     return value

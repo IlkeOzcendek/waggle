@@ -19,8 +19,25 @@ class HiveEventIn(BaseModel):
     timestamp: datetime
     status: EventStatus
     anomaly_fraction: float = Field(ge=0, le=1)
+    # How deep the anomalous windows fell outside the profile, where anomaly_fraction says
+    # only how many of them did. Optional: an edge service or a hive profile from before
+    # the acoustic model reported it sends events without one.
+    anomaly_severity: float | None = Field(default=None, ge=0, le=1)
     consecutive_anomalies: int = Field(default=0, ge=0)
     source_file: str | None = Field(default=None, max_length=255)
+    # The acoustic model file that produced this decision, so a report can trace its
+    # measurements back to the ONNX profile and not only to the model that phrased them.
+    model: str | None = Field(default=None, max_length=120)
+    # Conditions at the moment of the recording, stamped by the panel and only when the
+    # operator turned online weather on. Null everywhere else, and null is not "calm and
+    # dry": wind and rain corrupt a recording, so a period whose weather was never
+    # observed has to be read as unknown rather than as good. Never back-filled — the
+    # weather of an alarm three days old was not measured and cannot be invented.
+    temperature_c: float | None = Field(default=None, ge=-90, le=70)
+    humidity_percent: int | None = Field(default=None, ge=0, le=100)
+    wind_kmh: float | None = Field(default=None, ge=0, le=500)
+    # WMO weather interpretation code, as Open-Meteo reports it.
+    weather_code: int | None = Field(default=None, ge=0, le=99)
 
 
 class HiveEvent(HiveEventIn):
@@ -122,6 +139,23 @@ class Hive(HiveCreate):
     created_at: datetime
 
 
+class ModelAssessment(BaseModel):
+    """The structured judgement behind a report.
+
+    It was being produced, validated and then thrown away: only the grounding ids reached
+    the panel, so the one concrete output of the model — what it decided and why — could
+    not be shown or audited. Every field is a closed set the validator already enforces.
+    """
+
+    priority: Literal["routine", "watch", "immediate"]
+    pattern: str = Field(max_length=80)
+    queen_loss_compatible: bool = False
+    inspection_required: bool = False
+    action_codes: list[str] = Field(default_factory=list, max_length=8)
+    cross_check_model: str | None = Field(default=None, max_length=80)
+    cross_check_agreed: bool | None = None
+
+
 class ReportIn(BaseModel):
     period_start: datetime
     period_end: datetime
@@ -133,6 +167,7 @@ class ReportIn(BaseModel):
     grounding_sources: list[GroundingSource] = Field(default_factory=list, max_length=10)
     report_type: Literal["event", "daily", "weekly"] = "weekly"
     event_id: int | None = Field(default=None, ge=1)
+    assessment: ModelAssessment | None = None
 
     @field_validator("hive_ids")
     @classmethod
@@ -163,6 +198,30 @@ class ComponentStatus(BaseModel):
     summary: str
     detail: str
     last_seen_at: datetime | None = None
+    # How long this component may stay silent before its silence is a fault. Sent so the
+    # panel can say "son veri 25 dakika önce, beklenen aralık 15 dakika" instead of "son
+    # olay beklenen süreden eski", which names neither the delay nor the expectation.
+    stale_after_seconds: int | None = None
+    # What to actually do about it. A status page that reports a fault and stops has moved
+    # the problem from the machine to the reader without helping them.
+    remedies: list[str] = Field(default_factory=list, max_length=5)
+    # Whether this component has a record of its own past contacts to show. Only the two
+    # that receive something from outside do; the panel offers the link nowhere else,
+    # rather than opening an empty timeline.
+    has_history: bool = False
+
+
+class ContactRecord(BaseModel):
+    """One past contact with a component, for its connection history."""
+
+    at: datetime
+    label: str
+    status: Literal["NORMAL", "WATCH", "ALARM", "ok"]
+
+
+class ComponentHistory(BaseModel):
+    component: str
+    entries: list[ContactRecord]
 
 
 class SystemStatus(BaseModel):
@@ -180,3 +239,10 @@ class AppSettings(BaseModel):
     onboarding_completed: bool = False
     weather_enabled: bool = False
     language: Literal["tr", "en"] = "tr"
+    # Where the apiary is, as the weather service is asked about it. Separate from
+    # location_name because that is a label and this is a place: they were allowed to
+    # disagree, and the panel reported one town's conditions under another town's name —
+    # then wrote that reading onto every event recorded while online weather was on.
+    # Defaulted so a caller that predates the fields keeps the stored pair.
+    latitude: float = Field(default=39.7897, ge=-90, le=90)
+    longitude: float = Field(default=32.8065, ge=-180, le=180)
